@@ -1,0 +1,43 @@
+{
+  "product": "earthquake_italy",
+  "description": "Earthquake parametric insurance — Italy, M>=5.0, 100 km radius",
+
+  "bbox": {
+    "min_lat": 35.0,
+    "max_lat": 47.2,
+    "min_lon": 6.0,
+    "max_lon": 19.0
+  },
+
+  "time_start": "1995-01-01",
+  "time_end":   "2025-01-01",
+
+  "grid_step": 0.10,
+
+  "trigger_rule": "geo_radius_threshold",
+
+  "pricing_params": {
+    "threshold": 5.0,
+    "R_km":      100.0,
+    "T_years":   1.0,
+    "L":         1000.0,
+    "alpha":     0.20,
+    "T_hist_years": 30.0
+  },
+
+  "fetcher": {
+    "name": "usgs",
+    "params": {
+      "min_magnitude": 2.0,
+      "query_pad_deg": 1.0,
+      "chunk_years": 5,
+      "cache_dir": "usgs_cache"
+    }
+  },
+
+  "outputs": {
+    "geojson": "output/italy_earthquake_premium_map.geojson",
+    "html":    "output/italy_earthquake_premium_map.html",
+    "csv":     "output/italy_earthquake_premium_map.csv"
+  }
+}
