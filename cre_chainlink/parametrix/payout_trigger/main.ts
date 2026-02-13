@@ -19,18 +19,19 @@ import {
 } from '@chainlink/cre-sdk'
 import { type Address, decodeFunctionResult, encodeFunctionData, zeroAddress } from 'viem'
 import { z } from 'zod'
-import { BalanceReader, IERC20, MessageEmitter, ReserveManager } from '../contracts/abi'
+import { PolicyManager } from '../contracts/abi'
+
+// ==============================================================================
+// CONFIGURATION SCHEMA
+// ==============================================================================
 
 const configSchema = z.object({
-	schedule: z.string(),
-	url: z.string(),
+	schedule: z.string(), // Cron schedule for checking policies (e.g., "*/5 * * * *")
+	weatherApiKey: z.string(), // API key for weather data provider
+	weatherApiUrl: z.string(), // Base URL for weather API
 	evms: z.array(
 		z.object({
-			tokenAddress: z.string(),
-			porAddress: z.string(),
-			proxyAddress: z.string(),
-			balanceReaderAddress: z.string(),
-			messageEmitterAddress: z.string(),
+			policyManagerAddress: z.string(),
 			chainSelectorName: z.string(),
 			gasLimit: z.string(),
 		}),
@@ -39,48 +40,77 @@ const configSchema = z.object({
 
 type Config = z.infer<typeof configSchema>
 
-interface PORResponse {
-	accountName: string
-	totalTrust: number
-	totalToken: number
-	ripcord: boolean
-	updatedAt: string
+// ==============================================================================
+// TYPES
+// ==============================================================================
+
+enum Hazard {
+	Heatwave = 0,
+	Flood = 1,
+	Drought = 2,
 }
 
-interface ReserveInfo {
-	lastUpdated: Date
-	totalReserve: number
+interface Policy {
+	id: number
+	hazard: Hazard
+	start: number
+	end: number
+	maxCoverage: bigint
+	premium: bigint
+	triggerThreshold: number
+	paid: boolean
+	holder: Address
 }
 
-// Utility function to safely stringify objects with bigints
+interface WeatherData {
+	temperature: number // in Celsius
+	precipitation: number // in mm
+	timestamp: number
+}
+
+// ==============================================================================
+// UTILITY FUNCTIONS
+// ==============================================================================
+
 const safeJsonStringify = (obj: any): string =>
 	JSON.stringify(obj, (_, value) => (typeof value === 'bigint' ? value.toString() : value), 2)
 
-const fetchReserveInfo = (sendRequester: HTTPSendRequester, config: Config): ReserveInfo => {
-	const response = sendRequester.sendRequest({ method: 'GET', url: config.url }).result()
+/**
+ * Fetch weather data from external API
+ * In production, this would fetch from multiple sources for consensus
+ */
+const fetchWeatherDataForPolicy = (
+	sendRequester: HTTPSendRequester,
+	config: Config,
+): WeatherData => {
+	// Example: Using OpenWeatherMap or similar API
+	// In production, you'd fetch from multiple APIs and aggregate
+	const location = 'default_location' // Would come from policy metadata
+	const url = `${config.weatherApiUrl}?location=${location}&apiKey=${config.weatherApiKey}`
+
+	const response = sendRequester.sendRequest({ method: 'GET', url }).result()
 
 	if (response.statusCode !== 200) {
-		throw new Error(`HTTP request failed with status: ${response.statusCode}`)
+		throw new Error(`Weather API request failed with status: ${response.statusCode}`)
 	}
 
 	const responseText = Buffer.from(response.body).toString('utf-8')
-	const porResp: PORResponse = JSON.parse(responseText)
+	const weatherResp = JSON.parse(responseText)
 
-	if (porResp.ripcord) {
-		throw new Error('ripcord is true')
-	}
-
+	// Parse weather data (format depends on your API)
+	// This is an example structure
 	return {
-		lastUpdated: new Date(porResp.updatedAt),
-		totalReserve: porResp.totalToken,
+		temperature: weatherResp.temp || weatherResp.temperature || 0,
+		precipitation: weatherResp.precipitation || weatherResp.rain || 0,
+		timestamp: Date.now(),
 	}
 }
 
-const fetchNativeTokenBalance = (
-	runtime: Runtime<Config>,
-	evmConfig: Config['evms'][0],
-	tokenHolderAddress: string,
-): bigint => {
+/**
+ * Get active policies from the contract
+ */
+const getActivePolicies = (runtime: Runtime<Config>): Policy[] => {
+	const evmConfig = runtime.config.evms[0]
 	const network = getNetwork({
 		chainFamily: 'evm',
 		chainSelectorName: evmConfig.chainSelectorName,
@@ -93,89 +123,165 @@ const fetchNativeTokenBalance = (
 
 	const evmClient = new EVMClient(network.chainSelector.selector)
 
-	// Encode the contract call data for getNativeBalances
-	const callData = encodeFunctionData({
-		abi: BalanceReader,
-		functionName: 'getNativeBalances',
-		args: [[tokenHolderAddress as Address]],
+	// Get the next policy ID to know how many policies exist
+	const nextIdCallData = encodeFunctionData({
+		abi: PolicyManager,
+		functionName: 'nextId',
 	})
 
-	const contractCall = evmClient
+	const nextIdResponse = evmClient
 		.callContract(runtime, {
 			call: encodeCallMsg({
 				from: zeroAddress,
-				to: evmConfig.balanceReaderAddress as Address,
-				data: callData,
+				to: evmConfig.policyManagerAddress as Address,
+				data: nextIdCallData,
 			}),
 			blockNumber: LAST_FINALIZED_BLOCK_NUMBER,
 		})
 		.result()
 
-	// Decode the result
-	const balances = decodeFunctionResult({
-		abi: BalanceReader,
-		functionName: 'getNativeBalances',
-		data: bytesToHex(contractCall.data),
+	const nextId = decodeFunctionResult({
+		abi: PolicyManager,
+		functionName: 'nextId',
+		data: bytesToHex(nextIdResponse.data),
 	})
 
-	if (!balances || balances.length === 0) {
-		throw new Error('No balances returned from contract')
-	}
+	runtime.log(`Next policy ID: ${nextId.toString()}`)
 
-	return balances[0]
-}
+	// Fetch all policies (in production, you'd want to optimize this)
+	const policies: Policy[] = []
+	const currentTime = Math.floor(Date.now() / 1000)
 
-const getTotalSupply = (runtime: Runtime<Config>): bigint => {
-	const evms = runtime.config.evms
-	let totalSupply = 0n
-
-	for (const evmConfig of evms) {
-		const network = getNetwork({
-			chainFamily: 'evm',
-			chainSelectorName: evmConfig.chainSelectorName,
-			isTestnet: true,
-		})
-
-		if (!network) {
-			throw new Error(`Network not found for chain selector name: ${evmConfig.chainSelectorName}`)
-		}
-
-		const evmClient = new EVMClient(network.chainSelector.selector)
-
-		// Encode the contract call data for totalSupply
-		const callData = encodeFunctionData({
-			abi: IERC20,
-			functionName: 'totalSupply',
-		})
-
-		const contractCall = evmClient
-			.callContract(runtime, {
-				call: encodeCallMsg({
-					from: zeroAddress,
-					to: evmConfig.tokenAddress as Address,
-					data: callData,
-				}),
-				blockNumber: LAST_FINALIZED_BLOCK_NUMBER,
+	for (let id = 1; id < Number(nextId); id++) {
+		try {
+			// Fetch policy data
+			const policyCallData = encodeFunctionData({
+				abi: PolicyManager,
+				functionName: 'policies',
+				args: [BigInt(id)],
 			})
-			.result()
 
-		// Decode the result
-		const supply = decodeFunctionResult({
-			abi: IERC20,
-			functionName: 'totalSupply',
-			data: bytesToHex(contractCall.data),
-		})
+			const policyResponse = evmClient
+				.callContract(runtime, {
+					call: encodeCallMsg({
+						from: zeroAddress,
+						to: evmConfig.policyManagerAddress as Address,
+						data: policyCallData,
+					}),
+					blockNumber: LAST_FINALIZED_BLOCK_NUMBER,
+				})
+				.result()
 
-		totalSupply += supply
+			const policyData = decodeFunctionResult({
+				abi: PolicyManager,
+				functionName: 'policies',
+				data: bytesToHex(policyResponse.data),
+			})
+
+			// Fetch holder
+			const holderCallData = encodeFunctionData({
+				abi: PolicyManager,
+				functionName: 'holderOf',
+				args: [BigInt(id)],
+			})
+
+			const holderResponse = evmClient
+				.callContract(runtime, {
+					call: encodeCallMsg({
+						from: zeroAddress,
+						to: evmConfig.policyManagerAddress as Address,
+						data: holderCallData,
+					}),
+					blockNumber: LAST_FINALIZED_BLOCK_NUMBER,
+				})
+				.result()
+
+			const holder = decodeFunctionResult({
+				abi: PolicyManager,
+				functionName: 'holderOf',
+				data: bytesToHex(holderResponse.data),
+			})
+
+			// Check if policy is active (not paid, not expired)
+			const [hazard, start, end, maxCoverage, premium, triggerThreshold, paid] = policyData
+
+			if (!paid && Number(end) > currentTime) {
+				policies.push({
+					id,
+					hazard: Number(hazard) as Hazard,
+					start: Number(start),
+					end: Number(end),
+					maxCoverage,
+					premium,
+					triggerThreshold: Number(triggerThreshold),
+					paid,
+					holder: holder as Address,
+				})
+			}
+		} catch (error) {
+			runtime.log(`Error fetching policy ${id}: ${error}`)
+			// Skip this policy and continue
+		}
 	}
 
-	return totalSupply
+	return policies
 }
 
-const updateReserves = (
+/**
+ * Check if a policy trigger condition is met
+ */
+const checkPolicyTrigger = (
 	runtime: Runtime<Config>,
-	totalSupply: bigint,
-	totalReserveScaled: bigint,
+	policy: Policy,
+	weatherData: WeatherData,
+): { triggered: boolean; observedValue: number; payoutAmount: bigint } => {
+	let triggered = false
+	let observedValue = 0
+	let payoutAmount = 0n
+
+	switch (policy.hazard) {
+		case Hazard.Heatwave:
+			observedValue = weatherData.temperature
+			if (weatherData.temperature >= policy.triggerThreshold) {
+				triggered = true
+				// Calculate payout based on how much threshold was exceeded
+				// Simple example: full payout if threshold exceeded
+				payoutAmount = policy.maxCoverage
+			}
+			break
+
+		case Hazard.Flood:
+			observedValue = weatherData.precipitation
+			if (weatherData.precipitation >= policy.triggerThreshold) {
+				triggered = true
+				payoutAmount = policy.maxCoverage
+			}
+			break
+
+		case Hazard.Drought:
+			observedValue = weatherData.precipitation
+			if (weatherData.precipitation <= policy.triggerThreshold) {
+				triggered = true
+				payoutAmount = policy.maxCoverage
+			}
+			break
+	}
+
+	runtime.log(
+		`Policy ${policy.id}: Hazard=${Hazard[policy.hazard]}, Threshold=${policy.triggerThreshold}, Observed=${observedValue}, Triggered=${triggered}`,
+	)
+
+	return { triggered, observedValue, payoutAmount }
+}
+
+/**
+ * Trigger a payout on-chain
+ */
+const triggerPayout = (
+	runtime: Runtime<Config>,
+	policyId: number,
+	observedValue: number,
+	payoutAmount: bigint,
 ): string => {
 	const evmConfig = runtime.config.evms[0]
 	const network = getNetwork({
@@ -191,22 +297,17 @@ const updateReserves = (
 	const evmClient = new EVMClient(network.chainSelector.selector)
 
 	runtime.log(
-		`Updating reserves totalSupply ${totalSupply.toString()} totalReserveScaled ${totalReserveScaled.toString()}`,
+		`Triggering payout for policy ${policyId}: observedValue=${observedValue}, payout=${payoutAmount.toString()}`,
 	)
 
-	// Encode the contract call data for updateReserves
+	// Encode the triggerPayout call
 	const callData = encodeFunctionData({
-		abi: ReserveManager,
-		functionName: 'updateReserves',
-		args: [
-			{
-				totalMinted: totalSupply,
-				totalReserve: totalReserveScaled,
-			},
-		],
+		abi: PolicyManager,
+		functionName: 'triggerPayout',
+		args: [BigInt(policyId), BigInt(observedValue), payoutAmount],
 	})
 
-	// Step 1: Generate report using consensus capability
+	// Generate consensus report
 	const reportResponse = runtime
 		.report({
 			encodedPayload: hexToBase64(callData),
@@ -216,9 +317,10 @@ const updateReserves = (
 		})
 		.result()
 
+	// Submit the transaction
 	const resp = evmClient
 		.writeReport(runtime, {
-			receiver: evmConfig.proxyAddress,
+			receiver: evmConfig.policyManagerAddress,
 			report: reportResponse,
 			gasConfig: {
 				gasLimit: evmConfig.gasLimit,
@@ -229,126 +331,115 @@ const updateReserves = (
 	const txStatus = resp.txStatus
 
 	if (txStatus !== TxStatus.SUCCESS) {
-		throw new Error(`Failed to write report: ${resp.errorMessage || txStatus}`)
+		throw new Error(`Failed to trigger payout: ${resp.errorMessage || txStatus}`)
 	}
 
 	const txHash = resp.txHash || new Uint8Array(32)
+	runtime.log(`Payout triggered successfully at txHash: ${bytesToHex(txHash)}`)
 
-	runtime.log(`Write report transaction succeeded at txHash: ${bytesToHex(txHash)}`)
-
-	return txHash.toString()
+	return bytesToHex(txHash)
 }
 
-const doPOR = (runtime: Runtime<Config>): string => {
-	runtime.log(`fetching por url ${runtime.config.url}`)
+/**
+ * Main policy checking logic
+ */
+const checkPoliciesAndTriggerPayouts = (runtime: Runtime<Config>): string => {
+	runtime.log('Starting policy check...')
 
-	const httpCapability = new HTTPClient()
-	const reserveInfo = httpCapability
-		.sendRequest(
-			runtime,
-			fetchReserveInfo,
-			ConsensusAggregationByFields<ReserveInfo>({
-				lastUpdated: median,
-				totalReserve: median,
-			}),
-		)(runtime.config)
-		.result()
+	// Get all active policies
+	const activePolicies = getActivePolicies(runtime)
+	runtime.log(`Found ${activePolicies.length} active policies`)
 
-	runtime.log(`ReserveInfo ${safeJsonStringify(reserveInfo)}`)
-
-	const totalSupply = getTotalSupply(runtime)
-	runtime.log(`TotalSupply ${totalSupply.toString()}`)
-
-	const totalReserveScaled = BigInt(reserveInfo.totalReserve * 1e18)
-	runtime.log(`TotalReserveScaled ${totalReserveScaled.toString()}`)
-
-	const nativeTokenBalance = fetchNativeTokenBalance(
-		runtime,
-		runtime.config.evms[0],
-		runtime.config.evms[0].tokenAddress,
-	)
-	runtime.log(`NativeTokenBalance ${nativeTokenBalance.toString()}`)
-
-	updateReserves(runtime, totalSupply, totalReserveScaled)
-
-	return reserveInfo.totalReserve.toString()
-}
-
-const getLastMessage = (
-	runtime: Runtime<Config>,
-	evmConfig: Config['evms'][0],
-	emitter: string,
-): string => {
-	const network = getNetwork({
-		chainFamily: 'evm',
-		chainSelectorName: evmConfig.chainSelectorName,
-		isTestnet: true,
-	})
-
-	if (!network) {
-		throw new Error(`Network not found for chain selector name: ${evmConfig.chainSelectorName}`)
+	if (activePolicies.length === 0) {
+		return 'No active policies to check'
 	}
 
-	const evmClient = new EVMClient(network.chainSelector.selector)
+	// For each active policy, check if trigger conditions are met
+	const httpCapability = new HTTPClient()
 
-	// Encode the contract call data for getLastMessage
-	const callData = encodeFunctionData({
-		abi: MessageEmitter,
-		functionName: 'getLastMessage',
-		args: [emitter as Address],
-	})
+	let triggeredCount = 0
 
-	const contractCall = evmClient
-		.callContract(runtime, {
-			call: encodeCallMsg({
-				from: zeroAddress,
-				to: evmConfig.messageEmitterAddress as Address,
-				data: callData,
-			}),
-			blockNumber: LAST_FINALIZED_BLOCK_NUMBER,
-		})
-		.result()
+	for (const policy of activePolicies) {
+		try {
+			// Fetch weather data with DON consensus
+			const weatherData = httpCapability
+				.sendRequest(
+					runtime,
+					fetchWeatherDataForPolicy,
+					ConsensusAggregationByFields<WeatherData>({
+						temperature: median,
+						precipitation: median,
+						timestamp: median,
+					}),
+				)(runtime.config)
+				.result()
 
-	// Decode the result
-	const message = decodeFunctionResult({
-		abi: MessageEmitter,
-		functionName: 'getLastMessage',
-		data: bytesToHex(contractCall.data),
-	})
+			runtime.log(`Weather data: ${safeJsonStringify(weatherData)}`)
 
-	return message
+			// Check if policy trigger conditions are met
+			const { triggered, observedValue, payoutAmount } = checkPolicyTrigger(
+				runtime,
+				policy,
+				weatherData,
+			)
+
+			if (triggered) {
+				runtime.log(`Policy ${policy.id} triggered! Initiating payout...`)
+				triggerPayout(runtime, policy.id, observedValue, payoutAmount)
+				triggeredCount++
+			}
+		} catch (error) {
+			runtime.log(`Error processing policy ${policy.id}: ${error}`)
+			// Continue with next policy
+		}
+	}
+
+	return `Checked ${activePolicies.length} policies, triggered ${triggeredCount} payouts`
 }
 
+// ==============================================================================
+// HANDLER FUNCTIONS
+// ==============================================================================
+
+/**
+ * Cron trigger handler - periodically checks all active policies
+ */
 const onCronTrigger = (runtime: Runtime<Config>, payload: CronPayload): string => {
 	if (!payload.scheduledExecutionTime) {
 		throw new Error('Scheduled execution time is required')
 	}
 
-	runtime.log('Running CronTrigger')
+	runtime.log('Running CronTrigger for policy monitoring')
 
-	return doPOR(runtime)
+	return checkPoliciesAndTriggerPayouts(runtime)
 }
 
+/**
+ * Log trigger handler - responds to PolicyPurchased events
+ */
 const onLogTrigger = (runtime: Runtime<Config>, payload: EVMLog): string => {
-	runtime.log('Running LogTrigger')
+	runtime.log('Running LogTrigger - New policy purchased')
 
 	const topics = payload.topics
 
-	if (topics.length < 3) {
+	if (topics.length < 2) {
 		runtime.log('Log payload does not contain enough topics')
 		throw new Error(`log payload does not contain enough topics ${topics.length}`)
 	}
 
-	// topics[1] is a 32-byte topic, but the address is the last 20 bytes
-	const emitter = bytesToHex(topics[1].slice(12))
-	runtime.log(`Emitter ${emitter}`)
+	// Extract policy ID from topics[1] (first indexed parameter)
+	const policyId = BigInt(bytesToHex(topics[1]))
+	runtime.log(`New policy purchased with ID: ${policyId.toString()}`)
 
-	const message = getLastMessage(runtime, runtime.config.evms[0], emitter)
+	// Optionally, you could immediately check this new policy
+	// For now, we'll let the cron job handle it
 
-	runtime.log(`Message retrieved from the contract ${message}`)
-
-	return message
+	return `Policy ${policyId.toString()} registered, will be monitored by cron job`
 }
+
+// ==============================================================================
+// WORKFLOW INITIALIZATION
+// ==============================================================================
 
 const initWorkflow = (config: Config) => {
 	const cronTrigger = new CronCapability()
@@ -367,15 +458,19 @@ const initWorkflow = (config: Config) => {
 	const evmClient = new EVMClient(network.chainSelector.selector)
 
 	return [
+		// Cron trigger: Check all active policies periodically
 		handler(
 			cronTrigger.trigger({
 				schedule: config.schedule,
 			}),
 			onCronTrigger,
 		),
+		// Log trigger: Listen for PolicyPurchased events
 		handler(
 			evmClient.logTrigger({
-				addresses: [config.evms[0].messageEmitterAddress],
+				addresses: [config.evms[0].policyManagerAddress],
+				// Topic[0] is the event signature hash for PolicyPurchased
+				// This will automatically filter for PolicyPurchased events
 			}),
 			onLogTrigger,
 		),

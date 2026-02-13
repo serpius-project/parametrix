@@ -18,6 +18,30 @@ contract policyManager is ERC1155, Ownable {
 
     enum Hazard { Heatwave, Flood, Drought }
 
+    // Events for CRE monitoring
+    event PolicyPurchased(
+        uint256 indexed policyId,
+        address indexed holder,
+        Hazard hazard,
+        uint256 start,
+        uint256 end,
+        uint256 maxCoverage,
+        uint256 triggerThreshold
+    );
+
+    event PayoutTriggered(
+        uint256 indexed policyId,
+        address indexed holder,
+        uint256 observedValue,
+        uint256 requestedPayout,
+        uint256 actualPayout
+    );
+
+    event PolicyExpiredReleased(
+        uint256 indexed policyId,
+        uint256 sharesReleased
+    );
+
     struct Policy {
         Hazard hazard;
         uint40 start;
@@ -83,6 +107,16 @@ contract policyManager is ERC1155, Ownable {
         reservedShares[id] = sharesToReserve;
 
         _mint(receiver, id, 1, ""); // supply fixed to 1
+
+        emit PolicyPurchased(
+            id,
+            receiver,
+            hazard,
+            block.timestamp,
+            block.timestamp + durationDays * 1 days,
+            maxCoverage,
+            triggerThreshold
+        );
     }
 
     function buyPolicies(PolicyInput[] calldata inputs, address receiver)
@@ -121,6 +155,16 @@ contract policyManager is ERC1155, Ownable {
             reservedShares[id] = sharesToReserve;
 
             _mint(receiver, id, 1, "");
+
+            emit PolicyPurchased(
+                id,
+                receiver,
+                in_.hazard,
+                block.timestamp,
+                block.timestamp + in_.durationDays * 1 days,
+                in_.maxCoverage,
+                in_.triggerThreshold
+            );
         }
     }
 
@@ -148,6 +192,8 @@ contract policyManager is ERC1155, Ownable {
 
         // Withdraw using special payout function that handles reserved shares
         vault.withdrawForPayout(actualPayout, holder, reserved);
+
+        emit PayoutTriggered(id, holder, observedValue, payout, actualPayout);
     }
 
     // Release reserved shares for expired policies that were not triggered
@@ -165,6 +211,8 @@ contract policyManager is ERC1155, Ownable {
         // Unreserve the shares so underwriters can withdraw
         require(vault.unreserveShares(reserved), "unreserve failed");
         reservedShares[id] = 0;
+
+        emit PolicyExpiredReleased(id, reserved);
     }
 
     // Batch release for multiple expired policies
@@ -182,6 +230,8 @@ contract policyManager is ERC1155, Ownable {
             p.paid = true;
             require(vault.unreserveShares(reserved), "unreserve failed");
             reservedShares[id] = 0;
+
+            emit PolicyExpiredReleased(id, reserved);
         }
     }
 
