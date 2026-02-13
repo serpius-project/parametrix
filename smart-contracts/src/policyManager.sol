@@ -9,6 +9,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 interface IUnderwriterVault is IERC4626 {
     function reserveShares(uint256 shares) external returns (bool);
     function unreserveShares(uint256 shares) external returns (bool);
+    function withdrawForPayout(uint256 assets, address receiver, uint256 reservedShares) external returns (uint256 shares);
 }
 
 contract policyManager is ERC1155, Ownable {
@@ -143,13 +144,10 @@ contract policyManager is ERC1155, Ownable {
         uint256 actualPayout = (maxRedeemable >= payout) ? payout : maxRedeemable;
 
         p.paid = true;
-
-        // Unreserve the shares before withdrawal
-        require(vault.unreserveShares(reserved), "unreserve failed");
         reservedShares[id] = 0;
 
-        // Withdraw the actual payout to the holder
-        vault.withdraw(actualPayout, holder, address(this));
+        // Withdraw using special payout function that handles reserved shares
+        vault.withdrawForPayout(actualPayout, holder, reserved);
     }
 
     // Release reserved shares for expired policies that were not triggered

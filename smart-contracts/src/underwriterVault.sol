@@ -38,7 +38,8 @@ contract underwriterVault is ERC4626, Ownable, Pausable {
     // Reserve shares for a policy (only PolicyManager can call)
     function reserveShares(uint256 shares) external returns (bool) {
         require(msg.sender == policyManager, "not authorized");
-        require(balanceOf(policyManager) >= totalReservedShares + shares, "insufficient shares");
+        // Check that there are enough total shares in the vault to cover reservation
+        require(totalSupply() >= totalReservedShares + shares, "insufficient liquidity");
         totalReservedShares += shares;
         return true;
     }
@@ -51,6 +52,25 @@ contract underwriterVault is ERC4626, Ownable, Pausable {
         return true;
     }
 
+    // Special withdrawal for policy payouts - bypasses normal maxWithdraw limits
+    // PolicyManager uses this to pay claims using reserved shares
+    function withdrawForPayout(uint256 assets, address receiver, uint256 reservedShares) external returns (uint256 shares) {
+        require(msg.sender == policyManager, "not authorized");
+        require(totalReservedShares >= reservedShares, "invalid reservation");
+
+        // Calculate shares needed
+        shares = previewWithdraw(assets);
+        require(shares <= reservedShares, "exceeds reserved");
+
+        // Unreserve and burn the shares (redeem from total pool)
+        totalReservedShares -= reservedShares;
+
+        // Transfer assets to receiver
+        IERC20(asset()).transfer(receiver, assets);
+
+        emit Withdraw(msg.sender, receiver, address(this), assets, shares);
+    }
+
     function maxDeposit(address) public view override returns (uint256) {
         if (paused()) return 0;
         uint256 ta = totalAssets();
@@ -61,33 +81,28 @@ contract underwriterVault is ERC4626, Ownable, Pausable {
     // Override to prevent withdrawal of reserved shares
     function maxWithdraw(address owner) public view override returns (uint256) {
         uint256 ownerShares = balanceOf(owner);
-        uint256 availableShares;
 
-        // PolicyManager can only withdraw unreserved shares
-        if (owner == policyManager) {
-            if (ownerShares <= totalReservedShares) return 0;
-            availableShares = ownerShares - totalReservedShares;
-        } else {
-            availableShares = ownerShares;
-        }
+        // Calculate unreserved shares available in the vault
+        uint256 totalUnreserved = totalSupply() > totalReservedShares ? totalSupply() - totalReservedShares : 0;
 
-        return _convertToAssets(availableShares, Math.Rounding.Floor);
+        // Owner can only withdraw proportionally from unreserved shares
+        uint256 maxOwnerShares = ownerShares <= totalUnreserved ? ownerShares : totalUnreserved;
+
+        return _convertToAssets(maxOwnerShares, Math.Rounding.Floor);
     }
 
     // Override to prevent redemption of reserved shares
     function maxRedeem(address owner) public view override returns (uint256) {
         uint256 ownerShares = balanceOf(owner);
 
-        // PolicyManager can only redeem unreserved shares
-        if (owner == policyManager) {
-            if (ownerShares <= totalReservedShares) return 0;
-            return ownerShares - totalReservedShares;
-        }
+        // Calculate unreserved shares available in the vault
+        uint256 totalUnreserved = totalSupply() > totalReservedShares ? totalSupply() - totalReservedShares : 0;
 
-        return ownerShares;
+        // Owner can only redeem up to unreserved amount
+        return ownerShares <= totalUnreserved ? ownerShares : totalUnreserved;
     }
 
-    // Fee implemented by taking fee assets from caller before calling super.deposit on net assets
+    // Fee implemented by taking fee assets from caller before minting shares for net assets
     function deposit(uint256 assets, address receiver)
         public
         override
@@ -98,12 +113,19 @@ contract underwriterVault is ERC4626, Ownable, Pausable {
         uint256 fee = (assets * depositFeeBps) / 10_000;
         uint256 net = assets - fee;
 
+        // Calculate shares based on net assets
+        shares = previewDeposit(net);
+        require(shares > 0, "zero shares");
+
+        // Transfer assets from caller
         IERC20(asset()).transferFrom(msg.sender, address(this), assets);
+
+        // Transfer fee if applicable
         if (fee != 0) IERC20(asset()).transfer(feeRecipient, fee);
 
-        IERC20(asset()).approve(address(this), net);
-        // super.deposit pulls from msg.sender, so we use internal _deposit directly
-        shares = previewDeposit(net);
-        _deposit(msg.sender, receiver, net, shares);
+        // Mint shares to receiver
+        _mint(receiver, shares);
+
+        emit Deposit(msg.sender, receiver, net, shares);
     }
 }
