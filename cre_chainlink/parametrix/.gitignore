@@ -1,1 +1,2 @@
 *.env
+payout_trigger/node_modules/
