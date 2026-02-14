@@ -1,199 +1,161 @@
 # Deployment Scripts
 
-This directory contains scripts for deploying the Parametrix smart contracts.
+Quick reference for deploying Parametrix to **Ethereum Mainnet** and **Tenderly testnet**.
 
-## Quick Start
+## Quick Commands
 
+### Tenderly Testnet (Development)
 ```bash
-# 1. Copy and configure environment variables
-cp .env.example .env
-# Edit .env with your configuration
+# Deploy with mock USDC
+DEPLOY_MOCK_TOKEN=true forge script script/Deploy.s.sol:DeployScript \
+  --rpc-url $TENDERLY_RPC_URL \
+  --broadcast \
+  -vvvv
+```
 
-# 2. Local deployment (for testing)
-anvil &
-forge script script/Deploy.s.sol:DeployScript --fork-url http://localhost:8545 --broadcast
-
-# 3. Testnet deployment
-forge script script/Deploy.s.sol:DeployScript --rpc-url sepolia --broadcast --verify
-
-# 4. Production deployment
-forge script script/Deploy.s.sol:DeployProduction --rpc-url mainnet --broadcast --verify --slow
+### Ethereum Mainnet (Production)
+```bash
+# Deploy with real USDC
+forge script script/Deploy.s.sol:DeployProduction \
+  --rpc-url $MAINNET_RPC_URL \
+  --broadcast \
+  --verify \
+  --slow \
+  -vvvv
 ```
 
 ## Available Scripts
 
-### `Deploy.s.sol:DeployScript`
-Main deployment script for development and testing environments.
+### `DeployScript`
+**For development and testing (Tenderly)**
 
-**Features:**
-- Optionally deploys mock USDC token
+- Optionally deploys mock USDC
 - Configurable via environment variables
 - Saves deployment info to `deployments/latest.json`
-- Suitable for local and testnet deployments
 
-**Usage:**
-```bash
-forge script script/Deploy.s.sol:DeployScript \
-  --rpc-url <RPC_URL> \
-  --broadcast \
-  [--verify]
-```
+### `DeployProduction`
+**For production deployment (Mainnet)**
 
-### `Deploy.s.sol:DeployProduction`
-Hardened deployment script for production environments.
-
-**Features:**
-- Requires real asset token (no mock deployments)
+- Requires real USDC token
 - Additional safety checks
-- Fixed configuration for production use
-- Validates all required parameters
-
-**Usage:**
-```bash
-forge script script/Deploy.s.sol:DeployProduction \
-  --rpc-url <RPC_URL> \
-  --broadcast \
-  --verify \
-  --slow
-```
+- Fixed configuration for production
 
 ## Configuration
 
-All deployment parameters can be configured via environment variables:
+Required environment variables in `.env`:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PRIVATE_KEY` | *required* | Deployer private key |
-| `DEPLOY_MOCK_TOKEN` | `true` | Deploy mock USDC for testing |
-| `ASSET_TOKEN` | `address(0)` | Existing asset token address |
-| `VAULT_CAP` | `10000000000000` | Max vault capacity (10M USDC) |
-| `DEPOSIT_FEE_BPS` | `50` | Deposit fee in basis points (0.5%) |
-| `FEE_RECIPIENT` | deployer | Address receiving fees |
-| `VAULT_NAME` | `"Parametrix Underwriter Vault"` | Vault token name |
-| `VAULT_SYMBOL` | `"pUWV"` | Vault token symbol |
-| `POLICY_URI` | `"https://api.parametrix.io/policy/{id}"` | Policy NFT metadata URI |
+| Variable | Mainnet | Tenderly |
+|----------|---------|----------|
+| `PRIVATE_KEY` | Your deployer key | Your deployer key |
+| `DEPLOY_MOCK_TOKEN` | `false` | `true` |
+| `ASSET_TOKEN` | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` (USDC) | Not needed |
+| `MAINNET_RPC_URL` | Alchemy/Infura URL | - |
+| `TENDERLY_RPC_URL` | - | Your devnet URL |
+| `VAULT_CAP` | `10000000000000` (10M USDC) | `10000000000000` |
+| `DEPOSIT_FEE_BPS` | `50` (0.5%) | `50` |
+| `FEE_RECIPIENT` | Your address | Your address |
 
-## Common Commands
+## Common Operations
 
 ### Dry Run (Simulation)
-Test deployment without broadcasting transactions:
+Test without broadcasting:
 ```bash
-forge script script/Deploy.s.sol:DeployScript --rpc-url sepolia
-```
-
-### Deploy with Verification
-Deploy and automatically verify contracts on block explorer:
-```bash
-forge script script/Deploy.s.sol:DeployScript \
-  --rpc-url sepolia \
-  --broadcast \
-  --verify \
-  --etherscan-api-key $ETHERSCAN_API_KEY
+forge script script/Deploy.s.sol:DeployScript --rpc-url $TENDERLY_RPC_URL
 ```
 
 ### Resume Failed Deployment
-If deployment fails partway through, resume from last successful transaction:
+Continue from last successful transaction:
 ```bash
 forge script script/Deploy.s.sol:DeployScript \
-  --rpc-url sepolia \
+  --rpc-url $TENDERLY_RPC_URL \
   --resume \
   --broadcast
 ```
 
-### Deploy to Custom Network
-Deploy to any EVM-compatible network:
+### Manual Verification
+If auto-verification fails on mainnet:
 ```bash
-forge script script/Deploy.s.sol:DeployScript \
-  --rpc-url https://your-custom-rpc.com \
-  --broadcast \
-  --legacy  # Add if network doesn't support EIP-1559
+forge verify-contract \
+  <CONTRACT_ADDRESS> \
+  src/policyManager.sol:policyManager \
+  --chain-id 1 \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --constructor-args $(cast abi-encode "constructor(...)" ...)
 ```
 
 ## Post-Deployment
 
-After successful deployment, the script outputs:
-1. Contract addresses to console
-2. Deployment info to `deployments/latest.json`
-3. Transaction receipts to `broadcast/Deploy.s.sol/<chain-id>/`
+After deploying:
 
-### Set Oracle
-Update the oracle address in PolicyManager:
-```bash
-cast send <POLICY_MANAGER_ADDRESS> \
-  "setOracle(address)" \
-  <ORACLE_ADDRESS> \
-  --rpc-url <RPC_URL> \
-  --private-key $PRIVATE_KEY
-```
+1. **Save addresses** from deployment output
+2. **Set oracle**:
+   ```bash
+   cast send <POLICY_MANAGER> "setOracle(address)" <DON_ADDRESS> --rpc-url $RPC_URL --private-key $PRIVATE_KEY
+   ```
+3. **Transfer ownership** to multisig (mainnet only)
+4. **Configure CRE** with PolicyManager address
+5. **Initial deposit** to vault (mainnet)
 
-### Initial Underwriter Deposit
-Provide initial liquidity to the vault:
-```bash
-# 1. Approve vault
-cast send <ASSET_TOKEN> \
-  "approve(address,uint256)" \
-  <VAULT_ADDRESS> \
-  <AMOUNT> \
-  --rpc-url <RPC_URL> \
-  --private-key $UNDERWRITER_KEY
+## Network Details
 
-# 2. Deposit
-cast send <VAULT_ADDRESS> \
-  "deposit(uint256,address)" \
-  <AMOUNT> \
-  <UNDERWRITER_ADDRESS> \
-  --rpc-url <RPC_URL> \
-  --private-key $UNDERWRITER_KEY
-```
+### Ethereum Mainnet
+- **Chain ID**: 1
+- **USDC**: `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`
+- **Explorer**: https://etherscan.io
+- **Gas**: ~0.05 ETH needed
 
-## Network-Specific Examples
+### Tenderly Testnet
+- **Chain ID**: Custom (from dashboard)
+- **USDC**: Auto-deployed mock
+- **Explorer**: Tenderly dashboard
+- **Gas**: Free (virtual)
 
-### Ethereum Sepolia
-```bash
-forge script script/Deploy.s.sol:DeployScript \
-  --rpc-url $SEPOLIA_RPC_URL \
-  --broadcast \
-  --verify \
-  --etherscan-api-key $ETHERSCAN_API_KEY
-```
+## Deployment Outputs
 
-### Polygon Mumbai
-```bash
-forge script script/Deploy.s.sol:DeployScript \
-  --rpc-url $MUMBAI_RPC_URL \
-  --broadcast \
-  --verify \
-  --etherscan-api-key $POLYGONSCAN_API_KEY \
-  --verifier-url https://api-testnet.polygonscan.com/api
-```
-
-### Arbitrum Sepolia
-```bash
-forge script script/Deploy.s.sol:DeployScript \
-  --rpc-url $ARBITRUM_SEPOLIA_RPC_URL \
-  --broadcast \
-  --verify \
-  --etherscan-api-key $ARBISCAN_API_KEY \
-  --verifier-url https://api-sepolia.arbiscan.io/api
+Script saves to `deployments/latest.json`:
+```json
+{
+  "chainId": "1",
+  "network": "mainnet",
+  "timestamp": "2024-02-14T10:30:00Z",
+  "deployer": "0x...",
+  "contracts": {
+    "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "vault": "0x...",
+    "policyManager": "0x..."
+  },
+  "config": {
+    "vaultCap": "10000000000000",
+    "depositFeeBps": "50",
+    "feeRecipient": "0x..."
+  }
+}
 ```
 
 ## Troubleshooting
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed troubleshooting guide.
+| Issue | Solution |
+|-------|----------|
+| Gas estimation failed | Check RPC URL and deployer balance |
+| Verification failed | Use manual verification with `forge verify-contract` |
+| Transaction underpriced | Add `--slow` flag or set gas price manually |
+| Contract already deployed | Use `--resume` or deploy from different address |
 
 ## Security
 
-⚠️ **Never commit your `.env` file or private keys to version control!**
+⚠️ **Production Deployment:**
+- Use hardware wallet (`--ledger`) for mainnet
+- Never commit private keys
+- Test on Tenderly first
+- Verify all addresses before deploying
+- Transfer ownership to multisig immediately
 
-For production deployments:
-- Use a hardware wallet (Ledger/Trezor) with `--ledger` flag
-- Or use a secure key management system
-- Always test on testnet first
-- Verify all addresses before deployment
-- Use multi-sig for contract ownership
+## Full Documentation
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete guide.
 
 ## Resources
 
-- [Foundry Book - Deploying](https://book.getfoundry.sh/forge/deploying)
-- [Foundry Scripts](https://book.getfoundry.sh/tutorials/solidity-scripting)
-- [Cast Commands](https://book.getfoundry.sh/reference/cast/)
+- **CRE Setup**: `cre_chainlink/parametrix/payout_trigger/CRE_SETUP.md`
+- **Foundry Docs**: https://book.getfoundry.sh
+- **Tenderly**: https://dashboard.tenderly.co

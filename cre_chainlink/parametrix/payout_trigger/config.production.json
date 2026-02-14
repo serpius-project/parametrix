@@ -5,7 +5,7 @@
   "evms": [
     {
       "policyManagerAddress": "YOUR_DEPLOYED_POLICY_MANAGER_ADDRESS",
-      "chainSelectorName": "ethereum-testnet-sepolia",
+      "chainSelectorName": "ethereum-mainnet",
       "gasLimit": "1000000"
     }
   ]
