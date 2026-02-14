@@ -1,0 +1,1202 @@
+{
+  "China Telecom Inner Mongolia": {
+    "name": "China Telecom Inner Mongolia",
+    "city": "Hohhot, China",
+    "lat": 40.4323,
+    "lon": 111.6661,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 0.574001,
+          "loc": 0.001,
+          "scale": 0.031877
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 40.425003,
+        "grid_lon": 111.67502
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.645813,
+          "loc": 10.535922,
+          "scale": 9.353361
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0653,
+        "converged": true,
+        "grid_lat": 40.386642,
+        "grid_lon": 111.67605
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -1.103346,
+          "sigma": 0.24457
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0188,
+        "converged": true,
+        "grid_lat": 40.40001,
+        "grid_lon": 111.70001
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": 0.3106,
+          "b": 0.797145,
+          "loc": 4.531717,
+          "scale": 14.780351
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0177,
+        "converged": true,
+        "grid_lat": 40.386642,
+        "grid_lon": 111.67605
+      }
+    }
+  },
+  "The Citadel (Switch)": {
+    "name": "The Citadel (Switch)",
+    "city": "Tahoe Reno, NV",
+    "lat": 39.5157,
+    "lon": -119.4713,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 0.707517,
+          "loc": 0.001,
+          "scale": 0.181629
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 39.525,
+        "grid_lon": -119.47499
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.455581,
+          "loc": 11.371527,
+          "scale": 4.423508
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.26,
+        "converged": true,
+        "grid_lat": 39.543056,
+        "grid_lon": -119.418274
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -0.5766,
+          "sigma": 0.183586
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 39.5,
+        "grid_lon": -119.5
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": -17.786907,
+          "b": 13.132602,
+          "loc": -774.184772,
+          "scale": 412.073166
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0139,
+        "converged": true,
+        "grid_lat": 39.543056,
+        "grid_lon": -119.418274
+      }
+    }
+  },
+  "Harbin DC (China Mobile)": {
+    "name": "Harbin DC (China Mobile)",
+    "city": "Harbin, China",
+    "lat": 45.5891,
+    "lon": 126.6577,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 0.581846,
+          "loc": 0.001,
+          "scale": 0.152737
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 45.575005,
+        "grid_lon": 126.67502
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.718859,
+          "loc": 10.999887,
+          "scale": 11.78997
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0128,
+        "converged": true,
+        "grid_lat": 45.58875,
+        "grid_lon": 126.65094
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -0.801155,
+          "sigma": 0.203517
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0003,
+        "converged": true,
+        "grid_lat": 45.600006,
+        "grid_lon": 126.70001
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": -0.158394,
+          "b": 0.669431,
+          "loc": 5.093736,
+          "scale": 10.214336
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.1304,
+        "converged": true,
+        "grid_lat": 45.58875,
+        "grid_lon": 126.65094
+      }
+    }
+  },
+  "Range Intl Info Hub": {
+    "name": "Range Intl Info Hub",
+    "city": "Langfang, China",
+    "lat": 39.4678,
+    "lon": 116.7122,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 0.903045,
+          "loc": 0.02,
+          "scale": 0.485009
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 39.475006,
+        "grid_lon": 116.725006
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.724011,
+          "loc": 15.568429,
+          "scale": 10.29282
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0174,
+        "converged": true,
+        "grid_lat": 39.47276,
+        "grid_lon": 116.76349
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -1.315316,
+          "sigma": 0.258671
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0085,
+        "converged": true,
+        "grid_lat": 39.5,
+        "grid_lon": 116.70001
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": 0.285856,
+          "b": 0.697695,
+          "loc": 0.748235,
+          "scale": 13.748927
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0447,
+        "converged": true,
+        "grid_lat": 39.47276,
+        "grid_lon": 116.76349
+      }
+    }
+  },
+  "Switch SuperNAP": {
+    "name": "Switch SuperNAP",
+    "city": "Las Vegas, NV",
+    "lat": 36.1437,
+    "lon": -115.1051,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 0.709593,
+          "loc": 1.86,
+          "scale": 1.843177
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 36.125,
+        "grid_lon": -115.12499
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.189911,
+          "loc": 14.635766,
+          "scale": 4.19407
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0244,
+        "converged": true,
+        "grid_lat": 36.168716,
+        "grid_lon": -115.12988
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -1.848253,
+          "sigma": 0.146505
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 36.1,
+        "grid_lon": -115.1
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": 8.911311,
+          "b": 2.437883,
+          "loc": 142.494553,
+          "scale": 11.182219
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0096,
+        "converged": true,
+        "grid_lat": 36.168716,
+        "grid_lon": -115.12988
+      }
+    }
+  },
+  "Google Council Bluffs": {
+    "name": "Google Council Bluffs",
+    "city": "Council Bluffs, IA",
+    "lat": 41.2224,
+    "lon": -95.8641,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 1.30819,
+          "loc": 0.519765,
+          "scale": 4.390271
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.4663,
+        "converged": true,
+        "grid_lat": 41.225006,
+        "grid_lon": -95.87499
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.637874,
+          "loc": 17.532047,
+          "scale": 7.680987
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.035,
+        "converged": true,
+        "grid_lat": 41.23023,
+        "grid_lon": -95.80231
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -0.897588,
+          "sigma": 0.282963
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.2579,
+        "converged": true,
+        "grid_lat": 41.199997,
+        "grid_lon": -95.9
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": 0.257338,
+          "b": 1.882681,
+          "loc": 32.130121,
+          "scale": 89.924519
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.3921,
+        "converged": true,
+        "grid_lat": 41.23023,
+        "grid_lon": -95.80231
+      }
+    }
+  },
+  "Meta New Albany": {
+    "name": "Meta New Albany",
+    "city": "New Albany, OH",
+    "lat": 40.0682,
+    "lon": -82.7845,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 1.236053,
+          "loc": 0.0,
+          "scale": 0.870752
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.2581,
+        "converged": true,
+        "grid_lat": 40.075005,
+        "grid_lon": -82.774994
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.581886,
+          "loc": 17.785499,
+          "scale": 5.543615
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0148,
+        "converged": true,
+        "grid_lat": 40.105446,
+        "grid_lon": -82.815125
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -0.68453,
+          "sigma": 0.262031
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 40.100006,
+        "grid_lon": -82.799995
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": -18504572.722448,
+          "b": 42054807.597987,
+          "loc": -1036014635.658448,
+          "scale": 2280226113.916181
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.1709,
+        "converged": true,
+        "grid_lat": 40.105446,
+        "grid_lon": -82.815125
+      }
+    }
+  },
+  "Lakeside Tech Center": {
+    "name": "Lakeside Tech Center",
+    "city": "Chicago, IL",
+    "lat": 41.8536,
+    "lon": -87.6181,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 1.757515,
+          "loc": 0.0,
+          "scale": 346.102003
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.2727,
+        "converged": true,
+        "grid_lat": 41.875,
+        "grid_lon": -87.62499
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.607077,
+          "loc": 16.197957,
+          "scale": 7.814541
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0094,
+        "converged": true,
+        "grid_lat": 41.862915,
+        "grid_lon": -87.64877
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -1.644729,
+          "sigma": 0.179829
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 41.90001,
+        "grid_lon": -87.6
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": -27.012951,
+          "b": 28.501212,
+          "loc": -1102.267829,
+          "scale": 1037.298434
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.7719,
+        "converged": true,
+        "grid_lat": 41.862915,
+        "grid_lon": -87.64877
+      }
+    }
+  },
+  "CWL1 Data Centre": {
+    "name": "CWL1 Data Centre",
+    "city": "Newport, Wales",
+    "lat": 51.5542,
+    "lon": -3.0371,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 1.200227,
+          "loc": 3.806802,
+          "scale": 46.112705
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.6971,
+        "converged": true,
+        "grid_lat": 51.575005,
+        "grid_lon": -3.024994
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.279376,
+          "loc": 13.879955,
+          "scale": 3.57579
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0017,
+        "converged": true,
+        "grid_lat": 51.564144,
+        "grid_lon": -3.103455
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -0.6753,
+          "sigma": 0.240251
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 51.600006,
+        "grid_lon": -3.0
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": -12.52643,
+          "b": 6.107041,
+          "loc": -270.1158,
+          "scale": 77.525395
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.8909,
+        "converged": true,
+        "grid_lat": 51.564144,
+        "grid_lon": -3.103455
+      }
+    }
+  },
+  "Utah Data Center (NSA)": {
+    "name": "Utah Data Center (NSA)",
+    "city": "Bluffdale, UT",
+    "lat": 40.4315,
+    "lon": -111.9332,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 0.68562,
+          "loc": 0.16,
+          "scale": 25.762453
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.2563,
+        "converged": true,
+        "grid_lat": 40.425003,
+        "grid_lon": -111.924995
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.593366,
+          "loc": 10.935643,
+          "scale": 6.402004
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0641,
+        "converged": true,
+        "grid_lat": 40.45694,
+        "grid_lon": -111.960495
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -1.180931,
+          "sigma": 0.361471
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0018,
+        "converged": true,
+        "grid_lat": 40.40001,
+        "grid_lon": -111.9
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": 13.450076,
+          "b": 7.903496,
+          "loc": 528.38027,
+          "scale": 200.487813
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0006,
+        "converged": true,
+        "grid_lat": 40.45694,
+        "grid_lon": -111.960495
+      }
+    }
+  },
+  "Mesa DC (Apple)": {
+    "name": "Mesa DC (Apple)",
+    "city": "Mesa, AZ",
+    "lat": 33.315,
+    "lon": -111.5975,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 0.922597,
+          "loc": 0.03,
+          "scale": 0.2412
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.0017,
+        "converged": true,
+        "grid_lat": 33.325005,
+        "grid_lon": -111.57499
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.155673,
+          "loc": 16.784206,
+          "scale": 3.965168
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0001,
+        "converged": true,
+        "grid_lat": 33.286465,
+        "grid_lon": -111.63995
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -1.693906,
+          "sigma": 0.151666
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 33.300003,
+        "grid_lon": -111.6
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": 10.697925,
+          "b": 3.418783,
+          "loc": 273.921662,
+          "scale": 31.223553
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0243,
+        "converged": true,
+        "grid_lat": 33.286465,
+        "grid_lon": -111.63995
+      }
+    }
+  },
+  "QTS Atlanta Metro": {
+    "name": "QTS Atlanta Metro",
+    "city": "Atlanta, GA",
+    "lat": 33.7788,
+    "lon": -84.415,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 1.586171,
+          "loc": 0.262343,
+          "scale": 5.384069
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.3665,
+        "converged": true,
+        "grid_lat": 33.775,
+        "grid_lon": -84.424995
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.599177,
+          "loc": 20.640394,
+          "scale": 3.873989
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0012,
+        "converged": true,
+        "grid_lat": 33.778557,
+        "grid_lon": -84.402985
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -0.443643,
+          "sigma": 0.276317
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0002,
+        "converged": true,
+        "grid_lat": 33.800003,
+        "grid_lon": -84.4
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": -23.653428,
+          "b": 17.197197,
+          "loc": -1044.188749,
+          "scale": 583.387844
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.5224,
+        "converged": true,
+        "grid_lat": 33.778557,
+        "grid_lon": -84.402985
+      }
+    }
+  },
+  "Tract Phoenix Campus": {
+    "name": "Tract Phoenix Campus",
+    "city": "Phoenix, AZ",
+    "lat": 33.4484,
+    "lon": -112.074,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 0.631653,
+          "loc": 6.48,
+          "scale": 67.867079
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.029,
+        "converged": true,
+        "grid_lat": 33.425003,
+        "grid_lon": -112.07499
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.117921,
+          "loc": 17.042891,
+          "scale": 3.965701
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0002,
+        "converged": true,
+        "grid_lat": 33.427063,
+        "grid_lon": -112.02719
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -1.720189,
+          "sigma": 0.141514
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0001,
+        "converged": true,
+        "grid_lat": 33.4,
+        "grid_lon": -112.1
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": 9.332112,
+          "b": 2.596274,
+          "loc": 210.96956,
+          "scale": 16.512863
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0161,
+        "converged": true,
+        "grid_lat": 33.427063,
+        "grid_lon": -112.02719
+      }
+    }
+  },
+  "Tulip Data City": {
+    "name": "Tulip Data City",
+    "city": "Bangalore, India",
+    "lat": 12.9863,
+    "lon": 77.7346,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 0.659305,
+          "loc": 1.31,
+          "scale": 26.924474
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 12.975006,
+        "grid_lon": 77.725006
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.43973,
+          "loc": 21.673882,
+          "scale": 1.427778
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.1056,
+        "converged": true,
+        "grid_lat": 12.970123,
+        "grid_lon": 77.72727
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -0.552742,
+          "sigma": 0.260563
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0012,
+        "converged": true,
+        "grid_lat": 13.0,
+        "grid_lon": 77.70001
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": -3.876071,
+          "b": 2.99834,
+          "loc": -209.804248,
+          "scale": 105.869369
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.9671,
+        "converged": true,
+        "grid_lat": 12.970123,
+        "grid_lon": 77.72727
+      }
+    }
+  },
+  "CoreSite Reston": {
+    "name": "CoreSite Reston",
+    "city": "Reston, VA",
+    "lat": 38.9535,
+    "lon": -77.3718,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 1.108332,
+          "loc": 0.168211,
+          "scale": 1.992706
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.006,
+        "converged": true,
+        "grid_lat": 38.975006,
+        "grid_lon": -77.37499
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.602037,
+          "loc": 19.3493,
+          "scale": 5.133042
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0188,
+        "converged": true,
+        "grid_lat": 38.980667,
+        "grid_lon": -77.42465
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -0.337227,
+          "sigma": 0.226262
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 39.0,
+        "grid_lon": -77.4
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": -893662.935136,
+          "b": 1221774.950352,
+          "loc": -45036763.06546,
+          "scale": 56406280.240754
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.157,
+        "converged": true,
+        "grid_lat": 38.980667,
+        "grid_lon": -77.42465
+      }
+    }
+  },
+  "Intergate Seattle (Sabey)": {
+    "name": "Intergate Seattle (Sabey)",
+    "city": "Tukwila, WA",
+    "lat": 47.4942,
+    "lon": -122.2854,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 1.054376,
+          "loc": 9.602265,
+          "scale": 77.059516
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.6682,
+        "converged": true,
+        "grid_lat": 47.475006,
+        "grid_lon": -122.274994
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.341315,
+          "loc": 14.318962,
+          "scale": 4.283717
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0046,
+        "converged": true,
+        "grid_lat": 47.557117,
+        "grid_lon": -122.26973
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -0.798882,
+          "sigma": 0.391548
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 47.5,
+        "grid_lon": -122.3
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": -12.089281,
+          "b": 4.627939,
+          "loc": -381.016833,
+          "scale": 63.52487
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.1918,
+        "converged": true,
+        "grid_lat": 47.557117,
+        "grid_lon": -122.26973
+      }
+    }
+  },
+  "Iron Mountain NJE-1": {
+    "name": "Iron Mountain NJE-1",
+    "city": "Sayreville, NJ",
+    "lat": 40.5234,
+    "lon": -74.3481,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 1.418481,
+          "loc": 0.496438,
+          "scale": 4.862666
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.0397,
+        "converged": true,
+        "grid_lat": 40.525,
+        "grid_lon": -74.32499
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.517273,
+          "loc": 18.356967,
+          "scale": 5.580497
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.015,
+        "converged": true,
+        "grid_lat": 40.52724,
+        "grid_lon": -74.36441
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -0.662174,
+          "sigma": 0.180457
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 40.5,
+        "grid_lon": -74.299995
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": -25.13838,
+          "b": 19.051531,
+          "loc": -963.11984,
+          "scale": 578.454832
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.4325,
+        "converged": true,
+        "grid_lat": 40.52724,
+        "grid_lon": -74.36441
+      }
+    }
+  },
+  "Yotta NM1": {
+    "name": "Yotta NM1",
+    "city": "Panvel, India",
+    "lat": 18.9962,
+    "lon": 73.1134,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 0.493948,
+          "loc": 0.16,
+          "scale": 3.33727
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 18.975006,
+        "grid_lon": 73.125015
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.43928,
+          "loc": 25.08594,
+          "scale": 2.054792
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 19.015816,
+        "grid_lon": 73.13609
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -1.136877,
+          "sigma": 0.500565
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0,
+        "converged": true,
+        "grid_lat": 19.0,
+        "grid_lon": 73.100006
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": -1.939066,
+          "b": 0.869324,
+          "loc": -208.055129,
+          "scale": 29.493184
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0002,
+        "converged": true,
+        "grid_lat": 19.015816,
+        "grid_lon": 73.13609
+      }
+    }
+  },
+  "Microsoft Quincy": {
+    "name": "Microsoft Quincy",
+    "city": "Quincy, WA",
+    "lat": 47.24,
+    "lon": -119.86,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 0.748344,
+          "loc": 0.0,
+          "scale": 0.268369
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.0007,
+        "converged": true,
+        "grid_lat": 47.225006,
+        "grid_lon": -119.87499
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.573769,
+          "loc": 12.007208,
+          "scale": 5.741177
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0468,
+        "converged": true,
+        "grid_lat": 47.27592,
+        "grid_lon": -119.852936
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -1.11414,
+          "sigma": 0.276435
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0001,
+        "converged": true,
+        "grid_lat": 47.199997,
+        "grid_lon": -119.899994
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": -7456529.878593,
+          "b": 7666156.993771,
+          "loc": -351011440.467443,
+          "scale": 309686649.007687
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0041,
+        "converged": true,
+        "grid_lat": 47.27592,
+        "grid_lon": -119.852936
+      }
+    }
+  },
+  "Sines Data Center": {
+    "name": "Sines Data Center",
+    "city": "Sines, Portugal",
+    "lat": 37.93,
+    "lon": -8.81,
+    "hazards": {
+      "flood": {
+        "distribution": "weibull_min",
+        "params": {
+          "c": 1.036097,
+          "loc": 0.0,
+          "scale": 0.252228
+        },
+        "n_obs": 307,
+        "ks_pvalue": 0.0114,
+        "converged": true,
+        "grid_lat": 37.925003,
+        "grid_lon": -8.824997
+      },
+      "heatwave": {
+        "distribution": "genextreme",
+        "params": {
+          "c": 0.475061,
+          "loc": 17.895987,
+          "scale": 2.770834
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0139,
+        "converged": true,
+        "grid_lat": 37.996483,
+        "grid_lon": -8.830658
+      },
+      "waterstress": {
+        "distribution": "logitnormal",
+        "params": {
+          "mu": -1.701365,
+          "sigma": 0.411158
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0074,
+        "converged": true,
+        "grid_lat": 38.0,
+        "grid_lon": -8.800003
+      },
+      "drought": {
+        "distribution": "johnsonsu",
+        "params": {
+          "a": -7.923589,
+          "b": 2.133461,
+          "loc": -148.876331,
+          "scale": 5.765372
+        },
+        "n_obs": 372,
+        "ks_pvalue": 0.0337,
+        "converged": true,
+        "grid_lat": 37.996483,
+        "grid_lon": -8.830658
+      }
+    }
+  }
+}

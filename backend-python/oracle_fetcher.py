@@ -1,0 +1,442 @@
+"""
+Oracle Data Fetcher for Data Center Climate Risk Insurance.
+
+Fetches the latest observed data point from Open-Meteo APIs for each
+hazard type. This data is sent to the on-chain oracle to determine
+whether a parametric insurance trigger has been breached.
+
+Self-contained module — no dependency on dc_risk package.
+Requires only: requests, numpy.
+
+Usage
+-----
+    from oracle_fetcher import fetch_latest_observation
+
+    # Fetch the latest flood observation for a site
+    obs = fetch_latest_observation(
+        lat=41.86,
+        lon=-87.65,
+        hazard="flood",
+    )
+    print(obs)
+    # {
+    #   "hazard": "flood",
+    #   "lat": 41.86,
+    #   "lon": -87.65,
+    #   "date": "2025-01-01",
+    #   "value": 312.45,
+    #   "unit": "m3/s",
+    #   "variable": "river_discharge_m3s_max",
+    #   "aggregation": "monthly_max",
+    #   "source": "Open-Meteo Flood API",
+    # }
+
+Hazard → API mapping
+--------------------
+| Hazard       | API endpoint                      | Variable                           | Aggregation  |
+|-------------|----------------------------------|------------------------------------|-------------|
+| flood       | flood-api.open-meteo.com         | river_discharge (daily)            | monthly max |
+| heatwave    | archive-api.open-meteo.com       | wet_bulb_temperature_2m_max (daily)| monthly max |
+| waterstress | archive-api.open-meteo.com       | soil_moisture_0_to_100cm_mean      | monthly mean|
+| drought     | archive-api.open-meteo.com       | temp_2m_mean + precip_sum          | Thornthwaite|
+"""
+
+import time
+from datetime import date, timedelta
+from typing import Optional
+
+import numpy as np
+import requests
+
+# ── API configuration ─────────────────────────────────────────────────
+
+FLOOD_API = "https://flood-api.open-meteo.com/v1/flood"
+ARCHIVE_API = "https://archive-api.open-meteo.com/v1/archive"
+
+HAZARD_API_CONFIG = {
+    "flood": {
+        "url": FLOOD_API,
+        "daily_vars": "river_discharge",
+        "source": "Open-Meteo Flood API",
+        "output_variable": "river_discharge_m3s_max",
+        "unit": "m3/s",
+        "aggregation": "monthly_max",
+    },
+    "heatwave": {
+        "url": ARCHIVE_API,
+        "daily_vars": "wet_bulb_temperature_2m_max",
+        "source": "Open-Meteo Historical Weather API",
+        "output_variable": "wbt_c_max",
+        "unit": "C",
+        "aggregation": "monthly_max",
+    },
+    "waterstress": {
+        "url": ARCHIVE_API,
+        "daily_vars": "soil_moisture_0_to_100cm_mean",
+        "extra_params": {"models": "era5_land"},
+        "source": "Open-Meteo Historical Weather API (ERA5-Land)",
+        "output_variable": "soil_moisture_mean",
+        "unit": "m3/m3",
+        "aggregation": "monthly_mean",
+    },
+    "drought": {
+        "url": ARCHIVE_API,
+        "daily_vars": "temperature_2m_mean,precipitation_sum",
+        "source": "Open-Meteo Historical Weather API",
+        "output_variable": "D_mm",
+        "unit": "mm",
+        "aggregation": "monthly_thornthwaite_deficit",
+    },
+}
+
+
+# ── HTTP with retry ───────────────────────────────────────────────────
+
+def _get_json(url: str, params: dict, timeout: int = 60, max_retries: int = 3) -> dict:
+    """GET request with exponential backoff retry."""
+    for attempt in range(max_retries + 1):
+        try:
+            r = requests.get(url, params=params, timeout=timeout)
+            if r.status_code == 200:
+                return r.json()
+            if r.status_code == 429 and attempt < max_retries:
+                wait = 2 ** (attempt + 1)
+                time.sleep(wait)
+                continue
+            if r.status_code in (500, 502, 503, 504) and attempt < max_retries:
+                wait = 2 ** (attempt + 1)
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+        except requests.exceptions.RequestException as exc:
+            if attempt == max_retries:
+                raise
+            time.sleep(2 ** (attempt + 1))
+    raise RuntimeError(f"Max retries exceeded for {url}")
+
+
+# ── Thornthwaite PET ──────────────────────────────────────────────────
+
+def _compute_thornthwaite_deficit(dates, temps, precips) -> tuple:
+    """
+    Compute monthly water deficit D_mm = precip - PET (Thornthwaite).
+
+    Parameters
+    ----------
+    dates : list of str
+        Daily dates (YYYY-MM-DD).
+    temps : list of float
+        Daily mean temperature (C).
+    precips : list of float
+        Daily precipitation sum (mm).
+
+    Returns
+    -------
+    (monthly_dates, D_mm_values) : tuple of lists
+        Monthly dates (first of month) and D_mm values.
+    """
+    import pandas as pd
+
+    df = pd.DataFrame({
+        "date": pd.to_datetime(dates),
+        "temp_c": temps,
+        "precip_mm": precips,
+    }).dropna()
+
+    if len(df) < 30:
+        return [], []
+
+    # Monthly aggregation
+    m = df.resample("MS", on="date").agg(
+        temp_c=("temp_c", "mean"),
+        precip_mm=("precip_mm", "sum"),
+    )
+
+    # Thornthwaite PET
+    T = m["temp_c"].clip(lower=0)
+    I = (T / 5.0) ** 1.514
+    annual_I = I.rolling(12, center=True).sum().bfill().ffill()
+    a = (6.75e-7 * annual_I**3) - (7.71e-5 * annual_I**2) + (1.79e-2 * annual_I) + 0.492
+    annual_I_safe = annual_I.replace(0, np.nan).bfill().ffill()
+
+    m["pet_mm_month"] = 16.0 * ((10.0 * T) / annual_I_safe) ** a
+    m["D_mm"] = m["precip_mm"] - m["pet_mm_month"]
+
+    dates_out = [d.strftime("%Y-%m-%d") for d in m.index]
+    values_out = m["D_mm"].tolist()
+    return dates_out, values_out
+
+
+# ── Main fetch function ───────────────────────────────────────────────
+
+def fetch_latest_observation(
+    lat: float,
+    lon: float,
+    hazard: str,
+    lookback_months: int = 3,
+) -> dict:
+    """
+    Fetch the latest observed value from Open-Meteo for a hazard.
+
+    This is the data point that should be sent to the on-chain oracle
+    to evaluate whether a parametric insurance trigger has been breached.
+
+    Parameters
+    ----------
+    lat, lon : float
+        Site coordinates.
+    hazard : str
+        "flood" | "heatwave" | "waterstress" | "drought"
+    lookback_months : int
+        How many months back to fetch (default 3). The most recent
+        complete month is returned.
+
+    Returns
+    -------
+    dict with keys:
+        hazard, lat, lon, date, value, unit, variable,
+        aggregation, source, raw_daily_count
+    """
+    if hazard not in HAZARD_API_CONFIG:
+        raise ValueError(
+            f"Unknown hazard: '{hazard}'. "
+            f"Choose from: {list(HAZARD_API_CONFIG.keys())}"
+        )
+
+    cfg = HAZARD_API_CONFIG[hazard]
+    today = date.today()
+
+    # For drought we need >=12 months for Thornthwaite rolling window
+    if hazard == "drought":
+        lookback_months = max(lookback_months, 14)
+
+    start_date = (today - timedelta(days=lookback_months * 31)).replace(day=1)
+
+    # Build API request
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "daily": cfg["daily_vars"],
+        "start_date": start_date.isoformat(),
+        "end_date": today.isoformat(),
+        "timezone": "UTC",
+    }
+    # Add any extra params (e.g. models=era5_land for waterstress)
+    params.update(cfg.get("extra_params", {}))
+
+    # Fetch data
+    data = _get_json(cfg["url"], params)
+
+    daily = data.get("daily", {})
+    times = daily.get("time", [])
+
+    if not times:
+        return {
+            "hazard": hazard,
+            "lat": data.get("latitude", lat),
+            "lon": data.get("longitude", lon),
+            "error": "No daily data returned from API.",
+            "source": cfg["source"],
+        }
+
+    # ── Per-hazard aggregation to monthly ────────────────────────────
+
+    if hazard == "flood":
+        values = daily.get("river_discharge", [])
+        monthly = _aggregate_monthly(times, values, "max")
+
+    elif hazard == "heatwave":
+        values = daily.get("wet_bulb_temperature_2m_max", [])
+        monthly = _aggregate_monthly(times, values, "max")
+
+    elif hazard == "waterstress":
+        values = daily.get("soil_moisture_0_to_100cm_mean", [])
+        monthly = _aggregate_monthly(times, values, "mean")
+
+    elif hazard == "drought":
+        temps = daily.get("temperature_2m_mean", [])
+        precips = daily.get("precipitation_sum", [])
+        dates_out, values_out = _compute_thornthwaite_deficit(times, temps, precips)
+        monthly = list(zip(dates_out, values_out))
+
+    if not monthly:
+        return {
+            "hazard": hazard,
+            "lat": data.get("latitude", lat),
+            "lon": data.get("longitude", lon),
+            "error": "Could not compute monthly aggregation.",
+            "source": cfg["source"],
+        }
+
+    # Take the most recent complete month
+    latest_date, latest_value = monthly[-1]
+
+    return {
+        "hazard": hazard,
+        "lat": data.get("latitude", lat),
+        "lon": data.get("longitude", lon),
+        "date": latest_date,
+        "value": round(float(latest_value), 4),
+        "unit": cfg["unit"],
+        "variable": cfg["output_variable"],
+        "aggregation": cfg["aggregation"],
+        "source": cfg["source"],
+        "raw_daily_count": len(times),
+    }
+
+
+def _aggregate_monthly(dates: list, values: list, method: str) -> list:
+    """
+    Aggregate daily values to monthly.
+
+    Parameters
+    ----------
+    dates : list of str (YYYY-MM-DD)
+    values : list of float
+    method : "max" or "mean"
+
+    Returns
+    -------
+    list of (date_str, value) tuples, sorted by date.
+    """
+    from collections import defaultdict
+
+    monthly = defaultdict(list)
+    for d, v in zip(dates, values):
+        if v is None:
+            continue
+        month_key = d[:7] + "-01"  # "YYYY-MM-01"
+        monthly[month_key].append(float(v))
+
+    result = []
+    for month_key in sorted(monthly.keys()):
+        vals = monthly[month_key]
+        if not vals:
+            continue
+        if method == "max":
+            agg = max(vals)
+        elif method == "mean":
+            agg = sum(vals) / len(vals)
+        else:
+            raise ValueError(f"Unknown method: {method}")
+        result.append((month_key, agg))
+
+    return result
+
+
+# ── Batch fetch: all hazards for a site ───────────────────────────────
+
+def fetch_all_hazards(lat: float, lon: float, lookback_months: int = 3) -> dict:
+    """
+    Fetch the latest observation for ALL hazards at a site.
+
+    Parameters
+    ----------
+    lat, lon : float
+        Site coordinates.
+    lookback_months : int
+        Months to look back (default 3).
+
+    Returns
+    -------
+    dict
+        Keys: hazard names. Values: observation dicts.
+    """
+    results = {}
+    for hazard in HAZARD_API_CONFIG:
+        try:
+            results[hazard] = fetch_latest_observation(lat, lon, hazard, lookback_months)
+        except Exception as e:
+            results[hazard] = {
+                "hazard": hazard,
+                "lat": lat,
+                "lon": lon,
+                "error": str(e),
+            }
+    return results
+
+
+# ── Trigger evaluation ────────────────────────────────────────────────
+
+def evaluate_trigger(
+    observation: dict,
+    threshold: float,
+    hazard: str,
+) -> dict:
+    """
+    Evaluate whether an oracle observation triggers a payout.
+
+    Parameters
+    ----------
+    observation : dict
+        Output from fetch_latest_observation().
+    threshold : float
+        The trigger threshold value.
+    hazard : str
+        "flood" | "heatwave" | "waterstress" | "drought"
+
+    Returns
+    -------
+    dict with keys:
+        triggered (bool), value, threshold, direction, margin
+    """
+    if "error" in observation:
+        return {"triggered": False, "error": observation["error"]}
+
+    value = observation["value"]
+    direction = HAZARD_API_CONFIG[hazard].get("aggregation", "")
+
+    if hazard in ("flood", "heatwave"):
+        # High is bad: trigger if value > threshold
+        triggered = value > threshold
+        margin = value - threshold
+    else:
+        # Low is bad: trigger if value < threshold
+        triggered = value < threshold
+        margin = threshold - value
+
+    return {
+        "triggered": triggered,
+        "value": round(value, 4),
+        "threshold": threshold,
+        "direction": "high_is_bad" if hazard in ("flood", "heatwave") else "low_is_bad",
+        "margin": round(margin, 4),
+        "date": observation.get("date"),
+        "hazard": hazard,
+    }
+
+
+# ── CLI demo ──────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    print("=" * 70)
+    print("ORACLE FETCHER DEMO")
+    print("Fetching latest observations for Lakeside Tech Center, Chicago")
+    print("=" * 70)
+
+    lat, lon = 41.86, -87.65
+
+    for hazard in ["flood", "heatwave", "waterstress", "drought"]:
+        print(f"\n--- {hazard.upper()} ---")
+        try:
+            obs = fetch_latest_observation(lat, lon, hazard)
+            if "error" in obs:
+                print(f"  Error: {obs['error']}")
+            else:
+                print(f"  Date: {obs['date']}")
+                print(f"  Value: {obs['value']} {obs['unit']}")
+                print(f"  Variable: {obs['variable']}")
+                print(f"  Source: {obs['source']}")
+                print(f"  Daily data points: {obs['raw_daily_count']}")
+
+                # Demo trigger evaluation
+                thresholds = {
+                    "flood": 50, "heatwave": 25,
+                    "waterstress": 0.20, "drought": -50,
+                }
+                trigger = evaluate_trigger(obs, thresholds[hazard], hazard)
+                print(f"  Trigger ({thresholds[hazard]}): "
+                      f"{'BREACHED' if trigger['triggered'] else 'Safe'} "
+                      f"(margin: {trigger['margin']:.2f})")
+        except Exception as e:
+            print(f"  Error: {e}")
