@@ -1,13 +1,13 @@
 # Deployment Scripts
 
-Quick reference for deploying Parametrix to **Ethereum Mainnet** and **Tenderly testnet**.
+Quick reference for deploying Parametrix to **Ethereum Mainnet** and **Tenderly mainnet fork**.
 
 ## Quick Commands
 
-### Tenderly Testnet (Development)
+### Tenderly Mainnet Fork (Development)
 ```bash
-# Deploy with mock USDC
-DEPLOY_MOCK_TOKEN=true forge script script/Deploy.s.sol:DeployScript \
+# Deploy with real USDC (already exists on fork!)
+forge script script/Deploy.s.sol:DeployScript \
   --rpc-url $TENDERLY_RPC_URL \
   --broadcast \
   -vvvv
@@ -27,11 +27,12 @@ forge script script/Deploy.s.sol:DeployProduction \
 ## Available Scripts
 
 ### `DeployScript`
-**For development and testing (Tenderly)**
+**For development and testing (Tenderly Fork)**
 
-- Optionally deploys mock USDC
+- Uses real USDC contract (exists on mainnet fork)
 - Configurable via environment variables
 - Saves deployment info to `deployments/latest.json`
+- Identical deployment as mainnet
 
 ### `DeployProduction`
 **For production deployment (Mainnet)**
@@ -44,11 +45,11 @@ forge script script/Deploy.s.sol:DeployProduction \
 
 Required environment variables in `.env`:
 
-| Variable | Mainnet | Tenderly |
-|----------|---------|----------|
+| Variable | Mainnet | Tenderly Fork |
+|----------|---------|---------------|
 | `PRIVATE_KEY` | Your deployer key | Your deployer key |
-| `DEPLOY_MOCK_TOKEN` | `false` | `true` |
-| `ASSET_TOKEN` | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` (USDC) | Not needed |
+| `DEPLOY_MOCK_TOKEN` | `false` | `false` (USDC exists!) |
+| `ASSET_TOKEN` | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` | Same (fork!) |
 | `MAINNET_RPC_URL` | Alchemy/Infura URL | - |
 | `TENDERLY_RPC_URL` | - | Your devnet URL |
 | `VAULT_CAP` | `10000000000000` (10M USDC) | `10000000000000` |
@@ -104,11 +105,12 @@ After deploying:
 - **Explorer**: https://etherscan.io
 - **Gas**: ~0.05 ETH needed
 
-### Tenderly Testnet
+### Tenderly Mainnet Fork
 - **Chain ID**: Custom (from dashboard)
-- **USDC**: Auto-deployed mock
+- **USDC**: `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` (real contract!)
 - **Explorer**: Tenderly dashboard
 - **Gas**: Free (virtual)
+- **Type**: Full mainnet fork
 
 ## Deployment Outputs
 

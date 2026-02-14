@@ -18,13 +18,15 @@ Deployment instructions for **Ethereum Mainnet** (production) and **Tenderly tes
 - **RPC**: Alchemy/Infura recommended
 - **Block Explorer**: https://etherscan.io
 
-### Tenderly Testnet (Development - Public)
+### Tenderly Mainnet Fork (Development - Public)
+- **Type**: Mainnet fork - all mainnet contracts exist
 - **Chain ID**: Custom (configured in Tenderly dashboard)
-- **Mock USDC**: Deployed automatically
+- **USDC Address**: `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` (same as mainnet!)
 - **RPC**: Your Tenderly virtual testnet RPC URL
 - **Block Explorer**: Tenderly dashboard
 - **Visibility**: ⚠️ **Public** - Anyone can view and interact with contracts
-- **Security**: Use only for testing, no real funds or sensitive data
+- **Security**: Use only for testing, virtual funds only
+- **Advantage**: Test with real USDC contract for maximum realism
 
 ## Quick Start
 
@@ -43,9 +45,10 @@ TENDERLY_RPC_URL=https://rpc.vnet.tenderly.co/devnet/YOUR_DEVNET_ID
 # Verification
 ETHERSCAN_API_KEY=your_etherscan_api_key
 
-# Production Configuration (Mainnet)
+# Configuration (Both Mainnet and Tenderly Fork)
+# Since Tenderly is a mainnet fork, use same USDC address!
 DEPLOY_MOCK_TOKEN=false
-ASSET_TOKEN=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48  # USDC on Mainnet
+ASSET_TOKEN=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48  # USDC on Mainnet & Fork
 
 # Vault Settings
 VAULT_CAP=10000000000000              # 10M USDC (6 decimals)
@@ -56,24 +59,28 @@ VAULT_SYMBOL="pUWV"
 POLICY_URI="https://api.parametrix.io/policy/{id}"
 ```
 
-### 2. Deploy to Tenderly (Testing)
+### 2. Deploy to Tenderly (Testing on Mainnet Fork)
 
-**⚠️ Public Testnet Notice:**
-- Tenderly testnet is **publicly visible**
-- Anyone can interact with deployed contracts
-- Use only test wallets with no real value
-- Perfect for public testing and demonstrations
+**✨ Mainnet Fork Benefits:**
+- Uses **real USDC contract** at mainnet address
+- Identical deployment as mainnet (perfect for testing!)
+- Fork is **publicly visible** - great for community testing
+- Use Tenderly dashboard to mint test USDC to any address
 
 ```bash
-# Deploy with mock USDC
-DEPLOY_MOCK_TOKEN=true forge script script/Deploy.s.sol:DeployScript \
+# Deploy with real USDC (already exists on fork!)
+forge script script/Deploy.s.sol:DeployScript \
   --rpc-url $TENDERLY_RPC_URL \
   --broadcast \
   -vvvv
 
-# Save the deployed addresses
-# Share testnet URL with team or community for testing
+# Deployment is identical to mainnet, just different RPC URL
 ```
+
+**After deployment, fund test wallets:**
+1. Go to Tenderly dashboard
+2. Use "State Overrides" to mint USDC to test addresses
+3. Test policies with real USDC contract behavior
 
 ### 3. Deploy to Mainnet (Production)
 
@@ -226,11 +233,17 @@ forge verify-contract \
     "https://api.parametrix.io/policy/{id}")
 ```
 
-## Testing on Tenderly (Public Testnet)
+## Testing on Tenderly (Public Mainnet Fork)
 
-### Public Testnet Benefits
+### Mainnet Fork Benefits
 
-Since your Tenderly testnet is **publicly visible**:
+Since Tenderly is a **mainnet fork**, you get:
+- ✅ **Real USDC Contract**: Test with actual USDC at `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`
+- ✅ **Identical Deployment**: Same as mainnet, just virtual funds
+- ✅ **All Mainnet Contracts**: DeFi protocols, tokens, etc. all available
+- ✅ **Realistic Testing**: Exact production environment simulation
+
+Since the fork is **publicly visible**:
 - ✅ **Community Testing**: Share with community for early feedback
 - ✅ **Public Demos**: Show functionality to stakeholders/investors
 - ✅ **Integration Testing**: Partners can test integrations before mainnet
@@ -239,12 +252,13 @@ Since your Tenderly testnet is **publicly visible**:
 
 ### Security Considerations
 
-⚠️ **Important**: Public testnet means anyone can:
+⚠️ **Important**: Public fork means anyone can:
 - View all contract code and state
 - Call any public function
-- Purchase policies with mock USDC
+- Purchase policies with USDC (if they have fork balance)
 - Attempt exploits (good for finding bugs!)
 - Monitor all transactions and events
+- Interact with mainnet contracts on the fork
 
 **Best Practices**:
 - Use separate test wallets (never use mainnet keys)
@@ -275,8 +289,17 @@ View in Tenderly:
 **Share with team/community**:
 - Tenderly dashboard link
 - Contract addresses
-- Mock USDC faucet (if implemented)
+- How to get test USDC (Tenderly state overrides)
 - Testing instructions
+
+**Mint Test USDC on Fork**:
+```bash
+# Use Tenderly dashboard "State Overrides" feature
+# Or use Tenderly API to modify USDC balances:
+# 1. Go to Contract at 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+# 2. Find storage slot for balances mapping
+# 3. Override balance for your test address
+```
 
 ## Troubleshooting
 

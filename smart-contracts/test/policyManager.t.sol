@@ -74,6 +74,108 @@ contract PolicyManagerTest is Test {
         vm.label(oracle, "Oracle");
     }
 
+    /* ============ Hazard Management Tests ============ */
+
+    function test_DefaultHazardsInitialized() public view {
+        assertTrue(manager.validHazards(0), "Heatwave should be valid");
+        assertTrue(manager.validHazards(1), "Flood should be valid");
+        assertTrue(manager.validHazards(2), "Drought should be valid");
+
+        assertEq(manager.hazardNames(0), "Heatwave", "Heatwave name mismatch");
+        assertEq(manager.hazardNames(1), "Flood", "Flood name mismatch");
+        assertEq(manager.hazardNames(2), "Drought", "Drought name mismatch");
+    }
+
+    function test_AddHazardType() public {
+        manager.addHazardType(3, "Earthquake");
+
+        assertTrue(manager.validHazards(3), "Earthquake should be valid");
+        assertEq(manager.hazardNames(3), "Earthquake", "Earthquake name mismatch");
+    }
+
+    function test_AddHazardTypeRevertsIfAlreadyExists() public {
+        vm.expectRevert(bytes("hazard already exists"));
+        manager.addHazardType(0, "Heatwave");
+    }
+
+    function test_AddHazardTypeRevertsIfNotOwner() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        manager.addHazardType(3, "Earthquake");
+    }
+
+    function test_RemoveHazardType() public {
+        manager.removeHazardType(2); // Remove Drought
+
+        assertFalse(manager.validHazards(2), "Drought should be invalid");
+    }
+
+    function test_RemoveHazardTypeRevertsIfDoesntExist() public {
+        vm.expectRevert(bytes("hazard doesn't exist"));
+        manager.removeHazardType(99);
+    }
+
+    function test_BuyPolicyWithNewHazardType() public {
+        // Add new hazard type
+        manager.addHazardType(3, "Earthquake");
+
+        uint256 premium = 1000 * 10**18;
+        uint256 maxCoverage = 10_000 * 10**18;
+
+        vm.startPrank(alice);
+        asset.approve(address(manager), premium);
+        uint256 policyId = manager.buyPolicy(
+            3, // Earthquake
+            30,
+            maxCoverage,
+            premium,
+            6, // Magnitude 6.0 trigger
+            alice
+        );
+        vm.stopPrank();
+
+        assertEq(policyId, 1, "First policy should be ID 1");
+        (uint8 hazard, , , , , , ) = manager.policies(policyId);
+        assertEq(hazard, 3, "Policy should have Earthquake hazard");
+    }
+
+    function test_BuyPolicyRevertsWithInvalidHazard() public {
+        uint256 premium = 1000 * 10**18;
+
+        vm.startPrank(alice);
+        asset.approve(address(manager), premium);
+        vm.expectRevert(bytes("invalid hazard type"));
+        manager.buyPolicy(
+            99, // Invalid hazard
+            30,
+            10_000 * 10**18,
+            premium,
+            35,
+            alice
+        );
+        vm.stopPrank();
+    }
+
+    function test_BuyPolicyRevertsWithRemovedHazard() public {
+        // Remove a hazard
+        manager.removeHazardType(2); // Remove Drought
+
+        uint256 premium = 1000 * 10**18;
+
+        vm.startPrank(alice);
+        asset.approve(address(manager), premium);
+        vm.expectRevert(bytes("invalid hazard type"));
+        manager.buyPolicy(
+            2, // Drought (removed)
+            30,
+            10_000 * 10**18,
+            premium,
+            35,
+            alice
+        );
+        vm.stopPrank();
+    }
+
     /* ============ Policy Purchase Tests ============ */
 
     function test_BuyPolicy() public {
@@ -83,7 +185,7 @@ contract PolicyManagerTest is Test {
         vm.startPrank(alice);
         asset.approve(address(manager), premium);
         uint256 policyId = manager.buyPolicy(
-            policyManager.Hazard.Heatwave,
+            0,
             30, // 30 days
             maxCoverage,
             premium,
@@ -105,14 +207,14 @@ contract PolicyManagerTest is Test {
     function test_BuyMultiplePolicies() public {
         policyManager.PolicyInput[] memory inputs = new policyManager.PolicyInput[](2);
         inputs[0] = policyManager.PolicyInput({
-            hazard: policyManager.Hazard.Heatwave,
+            hazard: 0,
             durationDays: 30,
             maxCoverage: 10_000 * 10**18,
             premium: 1000 * 10**18,
             triggerThreshold: 35
         });
         inputs[1] = policyManager.PolicyInput({
-            hazard: policyManager.Hazard.Flood,
+            hazard: 1,
             durationDays: 60,
             maxCoverage: 20_000 * 10**18,
             premium: 2000 * 10**18,
@@ -141,7 +243,7 @@ contract PolicyManagerTest is Test {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
         manager.buyPolicy(
-            policyManager.Hazard.Heatwave,
+            0,
             30,
             10_000 * 10**18,
             1000 * 10**18,
@@ -164,7 +266,7 @@ contract PolicyManagerTest is Test {
         vm.startPrank(alice);
         asset.approve(address(manager), premium);
         uint256 policyId = manager.buyPolicy(
-            policyManager.Hazard.Heatwave,
+            0,
             30,
             maxCoverage,
             premium,
@@ -207,7 +309,7 @@ contract PolicyManagerTest is Test {
             asset.mint(alice, 1000 * 10**18);
             asset.approve(address(manager), 1000 * 10**18);
             policyIds[i] = manager.buyPolicy(
-                policyManager.Hazard.Heatwave,
+                0,
                 30,
                 100_000 * 10**18, // 100k coverage each
                 1000 * 10**18,
@@ -247,7 +349,7 @@ contract PolicyManagerTest is Test {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
         uint256 policyId = manager.buyPolicy(
-            policyManager.Hazard.Heatwave,
+            0,
             30,
             10_000 * 10**18,
             1000 * 10**18,
@@ -265,7 +367,7 @@ contract PolicyManagerTest is Test {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
         uint256 policyId = manager.buyPolicy(
-            policyManager.Hazard.Heatwave,
+            0,
             30,
             10_000 * 10**18,
             1000 * 10**18,
@@ -286,7 +388,7 @@ contract PolicyManagerTest is Test {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
         uint256 policyId = manager.buyPolicy(
-            policyManager.Hazard.Heatwave,
+            0,
             30,
             10_000 * 10**18,
             1000 * 10**18,
@@ -306,7 +408,7 @@ contract PolicyManagerTest is Test {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
         uint256 policyId = manager.buyPolicy(
-            policyManager.Hazard.Heatwave,
+            0,
             30,
             10_000 * 10**18,
             1000 * 10**18,
@@ -323,7 +425,7 @@ contract PolicyManagerTest is Test {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
         uint256 policyId = manager.buyPolicy(
-            policyManager.Hazard.Heatwave,
+            0,
             30,
             10_000 * 10**18,
             1000 * 10**18,
@@ -342,7 +444,7 @@ contract PolicyManagerTest is Test {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
         uint256 policyId = manager.buyPolicy(
-            policyManager.Hazard.Heatwave,
+            0,
             30,
             10_000 * 10**18,
             1000 * 10**18,
@@ -373,7 +475,7 @@ contract PolicyManagerTest is Test {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
         uint256 policyId = manager.buyPolicy(
-            policyManager.Hazard.Heatwave,
+            0,
             30,
             10_000 * 10**18,
             1000 * 10**18,
@@ -394,7 +496,7 @@ contract PolicyManagerTest is Test {
         for (uint i = 0; i < 3; i++) {
             asset.approve(address(manager), 1000 * 10**18);
             policyIds[i] = manager.buyPolicy(
-                policyManager.Hazard.Heatwave,
+                0,
                 30,
                 10_000 * 10**18,
                 1000 * 10**18,
@@ -423,7 +525,7 @@ contract PolicyManagerTest is Test {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
         uint256 policyId = manager.buyPolicy(
-            policyManager.Hazard.Heatwave,
+            0,
             30,
             10_000 * 10**18,
             1000 * 10**18,
@@ -444,7 +546,7 @@ contract PolicyManagerTest is Test {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
         uint256 policyId = manager.buyPolicy(
-            policyManager.Hazard.Heatwave,
+            0,
             30,
             10_000 * 10**18,
             1000 * 10**18,
@@ -483,7 +585,7 @@ contract PolicyManagerTest is Test {
         vm.startPrank(alice);
         asset.approve(address(manager), premium);
         uint256 policyId = manager.buyPolicy(
-            policyManager.Hazard.Heatwave,
+            0,
             durationDays,
             maxCoverage,
             premium,
@@ -510,7 +612,7 @@ contract PolicyManagerTest is Test {
         vm.startPrank(alice);
         asset.approve(address(manager), premium);
         uint256 policyId = manager.buyPolicy(
-            policyManager.Hazard.Heatwave,
+            0,
             30,
             maxCoverage,
             premium,
@@ -545,7 +647,7 @@ contract PolicyManagerTest is Test {
             for (uint8 j = 0; j < numPoliciesPerUser; j++) {
                 asset.approve(address(manager), 1000 * 10**18);
                 uint256 policyId = manager.buyPolicy(
-                    policyManager.Hazard.Heatwave,
+                    0,
                     30,
                     10_000 * 10**18,
                     1000 * 10**18,

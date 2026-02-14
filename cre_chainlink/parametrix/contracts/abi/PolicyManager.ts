@@ -1,5 +1,21 @@
 export const PolicyManager = [
-	// Events
+	// Hazard Management Events
+	{
+		anonymous: false,
+		inputs: [
+			{ indexed: true, internalType: 'uint8', name: 'hazardId', type: 'uint8' },
+			{ indexed: false, internalType: 'string', name: 'name', type: 'string' },
+		],
+		name: 'HazardAdded',
+		type: 'event',
+	},
+	{
+		anonymous: false,
+		inputs: [{ indexed: true, internalType: 'uint8', name: 'hazardId', type: 'uint8' }],
+		name: 'HazardRemoved',
+		type: 'event',
+	},
+	// Policy Events
 	{
 		anonymous: false,
 		inputs: [
@@ -35,7 +51,22 @@ export const PolicyManager = [
 		name: 'PolicyExpiredReleased',
 		type: 'event',
 	},
-	// View Functions
+	// View Functions - Hazard Registry
+	{
+		inputs: [{ internalType: 'uint8', name: '', type: 'uint8' }],
+		name: 'validHazards',
+		outputs: [{ internalType: 'bool', name: '', type: 'bool' }],
+		stateMutability: 'view',
+		type: 'function',
+	},
+	{
+		inputs: [{ internalType: 'uint8', name: '', type: 'uint8' }],
+		name: 'hazardNames',
+		outputs: [{ internalType: 'string', name: '', type: 'string' }],
+		stateMutability: 'view',
+		type: 'function',
+	},
+	// View Functions - Policy Data
 	{
 		inputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
 		name: 'policies',
@@ -72,7 +103,25 @@ export const PolicyManager = [
 		stateMutability: 'view',
 		type: 'function',
 	},
-	// State-Changing Functions
+	// State-Changing Functions - Hazard Management
+	{
+		inputs: [
+			{ internalType: 'uint8', name: 'hazardId', type: 'uint8' },
+			{ internalType: 'string', name: 'name', type: 'string' },
+		],
+		name: 'addHazardType',
+		outputs: [],
+		stateMutability: 'nonpayable',
+		type: 'function',
+	},
+	{
+		inputs: [{ internalType: 'uint8', name: 'hazardId', type: 'uint8' }],
+		name: 'removeHazardType',
+		outputs: [],
+		stateMutability: 'nonpayable',
+		type: 'function',
+	},
+	// State-Changing Functions - Payout
 	{
 		inputs: [
 			{ internalType: 'uint256', name: 'id', type: 'uint256' },

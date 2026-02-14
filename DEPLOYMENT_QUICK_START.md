@@ -1,7 +1,7 @@
 # Parametrix Deployment Quick Start
 
-**Networks**: Ethereum Mainnet (production) + Tenderly Testnet (development)
-**Token**: USDC (`0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` on mainnet)
+**Networks**: Ethereum Mainnet (production) + Tenderly Mainnet Fork (development)
+**Token**: USDC (`0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` on both!)
 
 ---
 
@@ -38,19 +38,23 @@ FEE_RECIPIENT=your_fee_recipient_address
 
 ### 2️⃣ Deploy to Tenderly (Test First)
 
-**⚠️ Note**: Tenderly testnet is **publicly visible** - perfect for community testing!
+**✨ Mainnet Fork**: Tenderly is a mainnet fork, so USDC already exists!
 
 ```bash
 cd smart-contracts
 
-# Deploy with mock USDC
-DEPLOY_MOCK_TOKEN=true forge script script/Deploy.s.sol:DeployScript \
+# Deploy with real USDC (already exists on fork at mainnet address!)
+forge script script/Deploy.s.sol:DeployScript \
   --rpc-url $TENDERLY_RPC_URL \
   --broadcast \
   -vvvv
 ```
 
-Save the deployed addresses! You can share the Tenderly dashboard link with your community for testing.
+**After deployment**:
+1. Save contract addresses
+2. Use Tenderly dashboard to mint test USDC to wallets
+3. Test with real USDC contract behavior!
+4. Share Tenderly link with community for public testing
 
 ### 3️⃣ Deploy to Mainnet (Production)
 
@@ -143,20 +147,22 @@ cast send <POLICY_MANAGER_ADDRESS> \
 - **Chain ID**: 1
 - **Explorer**: https://etherscan.io
 
-### Tenderly Testnet (Public)
-- **USDC**: Auto-deployed mock
+### Tenderly Mainnet Fork (Public)
+- **USDC**: `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` (same as mainnet!)
+- **Type**: Full mainnet fork - all contracts exist
 - **Chain ID**: Custom (from dashboard)
 - **Explorer**: Tenderly dashboard
 - **Visibility**: ⚠️ **Public** - Anyone can view/interact
+- **Advantage**: Test with real USDC contract
 
 ---
 
 ## 📊 Configuration Summary
 
-| Setting | Mainnet | Tenderly |
-|---------|---------|----------|
-| **Asset Token** | Real USDC | Mock USDC |
-| **Deploy Mock** | `false` | `true` |
+| Setting | Mainnet | Tenderly Fork |
+|---------|---------|---------------|
+| **Asset Token** | USDC `0xA0b8...B48` | USDC `0xA0b8...B48` (same!) |
+| **Deploy Mock** | `false` | `false` (USDC exists!) |
 | **Vault Cap** | 10M USDC | 10M USDC |
 | **Deposit Fee** | 0.5% | 0.5% |
 | **CRE Check Frequency** | Every 5 min | Every 2 min |

@@ -16,13 +16,19 @@ contract policyManager is ERC1155, Ownable {
     IERC20   public immutable asset;
     IUnderwriterVault public immutable vault;
 
-    enum Hazard { Heatwave, Flood, Drought }
+    // Dynamic hazard type registry (replaces fixed enum for flexibility)
+    mapping(uint8 => bool) public validHazards;
+    mapping(uint8 => string) public hazardNames;
+
+    // Hazard management events
+    event HazardAdded(uint8 indexed hazardId, string name);
+    event HazardRemoved(uint8 indexed hazardId);
 
     // Events for CRE monitoring
     event PolicyPurchased(
         uint256 indexed policyId,
         address indexed holder,
-        Hazard hazard,
+        uint8 hazard,
         uint256 start,
         uint256 end,
         uint256 maxCoverage,
@@ -43,7 +49,7 @@ contract policyManager is ERC1155, Ownable {
     );
 
     struct Policy {
-        Hazard hazard;
+        uint8 hazard;
         uint40 start;
         uint40 end;
         uint256 maxCoverage;
@@ -53,7 +59,7 @@ contract policyManager is ERC1155, Ownable {
     }
 
     struct PolicyInput {
-        Hazard hazard;
+        uint8 hazard;
         uint256 durationDays;
         uint256 maxCoverage;
         uint256 premium;
@@ -73,18 +79,65 @@ contract policyManager is ERC1155, Ownable {
         asset = asset_;
         vault = vault_;
         oracle = msg.sender;
+
+        // Initialize default hazard types (backward compatible)
+        validHazards[0] = true; // Heatwave
+        validHazards[1] = true; // Flood
+        validHazards[2] = true; // Drought
+
+        hazardNames[0] = "Heatwave";
+        hazardNames[1] = "Flood";
+        hazardNames[2] = "Drought";
     }
 
     function setOracle(address o) external onlyOwner { oracle = o; }
 
+    // ============================================================================
+    // HAZARD MANAGEMENT FUNCTIONS
+    // ============================================================================
+
+    /**
+     * @notice Add a new hazard type to the registry
+     * @param hazardId Unique identifier for the hazard (e.g., 3, 4, 5...)
+     * @param name Human-readable name for the hazard (e.g., "Earthquake", "Hurricane")
+     */
+    function addHazardType(uint8 hazardId, string calldata name) external onlyOwner {
+        require(!validHazards[hazardId], "hazard already exists");
+        require(bytes(name).length > 0, "name required");
+
+        validHazards[hazardId] = true;
+        hazardNames[hazardId] = name;
+
+        emit HazardAdded(hazardId, name);
+    }
+
+    /**
+     * @notice Remove/deprecate a hazard type from the registry
+     * @dev Existing policies with this hazard remain valid, but new policies cannot be created
+     * @param hazardId The hazard identifier to remove
+     */
+    function removeHazardType(uint8 hazardId) external onlyOwner {
+        require(validHazards[hazardId], "hazard doesn't exist");
+
+        validHazards[hazardId] = false;
+
+        emit HazardRemoved(hazardId);
+    }
+
+    // ============================================================================
+    // POLICY PURCHASE FUNCTIONS
+    // ============================================================================
+
     function buyPolicy(
-        Hazard hazard,
+        uint8 hazard,
         uint256 durationDays,
         uint256 maxCoverage,
         uint256 premium,
         uint256 triggerThreshold,
         address receiver
     ) external returns (uint256 id) {
+        require(validHazards[hazard], "invalid hazard type");
+
         id = nextId++;
 
         policies[id] = Policy({
@@ -136,6 +189,8 @@ contract policyManager is ERC1155, Ownable {
 
         for (uint256 i; i < n; ++i) {
             PolicyInput calldata in_ = inputs[i];
+            require(validHazards[in_.hazard], "invalid hazard type");
+
             uint256 id = nextId++;
             ids[i] = id;
 

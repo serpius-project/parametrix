@@ -44,15 +44,14 @@ type Config = z.infer<typeof configSchema>
 // TYPES
 // ==============================================================================
 
-enum Hazard {
-	Heatwave = 0,
-	Flood = 1,
-	Drought = 2,
-}
+// Hazard types (matches smart contract uint8 values)
+// Default types: 0=Heatwave, 1=Flood, 2=Drought
+// Additional types can be added dynamically via smart contract
+type HazardType = number
 
 interface Policy {
 	id: number
-	hazard: Hazard
+	hazard: HazardType
 	start: number
 	end: number
 	maxCoverage: bigint
@@ -208,7 +207,7 @@ const getActivePolicies = (runtime: Runtime<Config>): Policy[] => {
 			if (!paid && Number(end) > currentTime) {
 				policies.push({
 					id,
-					hazard: Number(hazard) as Hazard,
+					hazard: Number(hazard),
 					start: Number(start),
 					end: Number(end),
 					maxCoverage,
@@ -229,6 +228,7 @@ const getActivePolicies = (runtime: Runtime<Config>): Policy[] => {
 
 /**
  * Check if a policy trigger condition is met
+ * Hazard types: 0=Heatwave, 1=Flood, 2=Drought (+ any custom hazards added)
  */
 const checkPolicyTrigger = (
 	runtime: Runtime<Config>,
@@ -239,8 +239,16 @@ const checkPolicyTrigger = (
 	let observedValue = 0
 	let payoutAmount = 0n
 
+	// Get hazard name for logging
+	const hazardNames: Record<number, string> = {
+		0: 'Heatwave',
+		1: 'Flood',
+		2: 'Drought',
+	}
+	const hazardName = hazardNames[policy.hazard] || `Hazard-${policy.hazard}`
+
 	switch (policy.hazard) {
-		case Hazard.Heatwave:
+		case 0: // Heatwave
 			observedValue = weatherData.temperature
 			if (weatherData.temperature >= policy.triggerThreshold) {
 				triggered = true
@@ -250,7 +258,7 @@ const checkPolicyTrigger = (
 			}
 			break
 
-		case Hazard.Flood:
+		case 1: // Flood
 			observedValue = weatherData.precipitation
 			if (weatherData.precipitation >= policy.triggerThreshold) {
 				triggered = true
@@ -258,17 +266,23 @@ const checkPolicyTrigger = (
 			}
 			break
 
-		case Hazard.Drought:
+		case 2: // Drought
 			observedValue = weatherData.precipitation
 			if (weatherData.precipitation <= policy.triggerThreshold) {
 				triggered = true
 				payoutAmount = policy.maxCoverage
 			}
 			break
+
+		default:
+			// For custom hazard types added dynamically, implement generic logic
+			// or extend this switch statement
+			runtime.log(`Warning: Unknown hazard type ${policy.hazard} - skipping trigger check`)
+			break
 	}
 
 	runtime.log(
-		`Policy ${policy.id}: Hazard=${Hazard[policy.hazard]}, Threshold=${policy.triggerThreshold}, Observed=${observedValue}, Triggered=${triggered}`,
+		`Policy ${policy.id}: Hazard=${hazardName}, Threshold=${policy.triggerThreshold}, Observed=${observedValue}, Triggered=${triggered}`,
 	)
 
 	return { triggered, observedValue, payoutAmount }
