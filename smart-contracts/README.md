@@ -1,66 +1,106 @@
-## Foundry
+# Parametrix Smart Contracts
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+Foundry project containing the parametric insurance smart contracts for Parametrix.
 
-Foundry consists of:
+## Contracts
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+| Contract | Description |
+|---|---|
+| `src/policyManager.sol` | Issues policies (ERC-1155 NFTs), collects premiums, triggers payouts |
+| `src/underwriterVault.sol` | ERC-4626 vault where underwriters deposit USDC as collateral |
 
-## Documentation
+## Setup
 
-https://book.getfoundry.sh/
+```bash
+# Install Foundry (if not already installed)
+curl -L https://foundry.paradigm.xyz | bash
+foundryup
 
-## Usage
-
-### Build
-
-```shell
-$ forge build
+# Install dependencies
+forge install
 ```
 
-### Test
-
-```shell
-$ forge test
+Copy and configure your environment:
+```bash
+cp .env.example .env   # then edit .env with your keys and addresses
 ```
 
-### Format
+## Scripts
 
-```shell
-$ forge fmt
+### 1. Deploy contracts
+
+Deploys MockUSDC (testnet), UnderwriterVault, and PolicyManager. Saves addresses to `deployments/latest.json`.
+
+```bash
+forge script script/Deploy.s.sol:DeployScript \
+  --rpc-url $TENDERLY_RPC_URL \
+  --broadcast \
+  -vvvv
 ```
 
-### Gas Snapshots
+After deploying, copy the printed addresses into:
+- `script/BuyPolicy.s.sol` (constants at the top)
+- `cre_chainlink/parametrix/payout_trigger/config.staging.json` (`policyManagerAddress`)
 
-```shell
-$ forge snapshot
+### 2. Buy a policy (simulate a user)
+
+Before running, update the constants at the top of `script/BuyPolicy.s.sol`:
+
+```solidity
+address constant POLICY_MANAGER_ADDRESS = address(0x...); // from deployments/latest.json
+address constant ASSET_TOKEN_ADDRESS    = address(0x...); // from deployments/latest.json
 ```
 
-### Anvil
+Then run:
 
-```shell
-$ anvil
+```bash
+forge script script/BuyPolicy.s.sol:BuyPolicyScript \
+  --rpc-url $TENDERLY_RPC_URL \
+  --broadcast \
+  -vvvv
 ```
 
-### Deploy
+The script will:
+1. Mint mock USDC to the buyer wallet (if `MINT_MOCK_USDC = true`)
+2. Approve the PolicyManager to spend the premium
+3. Call `buyPolicy()` and print the resulting policy ID and details
 
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
+### 3. Build & test
+
+```bash
+forge build
+forge test -vvvv
 ```
 
-### Cast
+## Environment variables (`.env`)
 
-```shell
-$ cast <subcommand>
+| Variable | Description |
+|---|---|
+| `PRIVATE_KEY` | Deployer wallet private key |
+| `TENDERLY_RPC_URL` | Your Tenderly virtual testnet RPC URL |
+| `MAINNET_RPC_URL` | Ethereum mainnet RPC (for production) |
+| `USER_PRIVATE_KEY` | Policy buyer wallet private key (for BuyPolicy script) |
+| `ETHERSCAN_API_KEY` | For contract verification (mainnet only) |
+
+## Deployment output
+
+After running Deploy.s.sol, addresses are saved to `deployments/latest.json`:
+
+```json
+{
+  "asset": "0x...",
+  "vault": "0x...",
+  "policyManager": "0x...",
+  "feeRecipient": "0x...",
+  "vaultCap": "...",
+  "depositFeeBps": "..."
+}
 ```
 
-### Help
+## Hazard types
 
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+| ID | Name | Trigger unit |
+|---|---|---|
+| 0 | Heatwave | °C (wet-bulb temperature) |
+| 1 | Flood | m³/s (river discharge) |
+| 2 | Drought | mm (water deficit) |

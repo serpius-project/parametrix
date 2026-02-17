@@ -35,13 +35,16 @@ contract underwriterVault is ERC4626, Ownable, Pausable {
     function pause() external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
 
-    // Reserve shares for a policy (only PolicyManager can call)
-    function reserveShares(uint256 shares) external returns (bool) {
+    // Reserve shares for a policy (only PolicyManager can call).
+    // Returns the number of shares actually reserved, which may be less than
+    // requested if the vault is underfunded (partial reservation allowed).
+    function reserveShares(uint256 shares) external returns (uint256 reserved) {
         require(msg.sender == policyManager, "not authorized");
-        // Check that there are enough total shares in the vault to cover reservation
-        require(totalSupply() >= totalReservedShares + shares, "insufficient liquidity");
-        totalReservedShares += shares;
-        return true;
+        uint256 available = totalSupply() > totalReservedShares
+            ? totalSupply() - totalReservedShares
+            : 0;
+        reserved = shares < available ? shares : available;
+        totalReservedShares += reserved;
     }
 
     // Release reserved shares (when policy expires or is paid)

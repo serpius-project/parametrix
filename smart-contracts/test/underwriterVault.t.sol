@@ -103,10 +103,10 @@ contract UnderwriterVaultTest is Test {
         vault.deposit(INITIAL_DEPOSIT, policyManager);
 
         uint256 sharesToReserve = 1000 * 10**18;
-        bool success = vault.reserveShares(sharesToReserve);
+        uint256 reserved = vault.reserveShares(sharesToReserve);
         vm.stopPrank();
 
-        assertTrue(success, "Reservation should succeed");
+        assertEq(reserved, sharesToReserve, "Should fully reserve when vault has capacity");
         assertEq(vault.totalReservedShares(), sharesToReserve, "Reserved shares mismatch");
     }
 
@@ -120,15 +120,38 @@ contract UnderwriterVaultTest is Test {
         vm.stopPrank();
     }
 
-    function test_ReserveSharesRevertsIfInsufficient() public {
+    // reserveShares no longer reverts on insufficient liquidity - it returns a partial
+    // reservation so policies can be purchased even when the vault is underfunded.
+    function test_ReserveSharesPartialWhenInsufficient() public {
         vm.startPrank(policyManager);
         asset.mint(policyManager, INITIAL_DEPOSIT);
         asset.approve(address(vault), INITIAL_DEPOSIT);
         uint256 shares = vault.deposit(INITIAL_DEPOSIT, policyManager);
 
-        vm.expectRevert(bytes("insufficient liquidity"));
-        vault.reserveShares(shares + 1);
+        // Request more shares than available
+        uint256 reserved = vault.reserveShares(shares + 1000 * 10**18);
         vm.stopPrank();
+
+        // Should cap at the actual available shares, not revert
+        assertEq(reserved, shares, "Should reserve only what is available");
+        assertEq(vault.totalReservedShares(), shares, "Total reserved equals available");
+    }
+
+    function test_ReserveSharesReturnsZeroWhenFullyReserved() public {
+        vm.startPrank(policyManager);
+        asset.mint(policyManager, INITIAL_DEPOSIT);
+        asset.approve(address(vault), INITIAL_DEPOSIT);
+        uint256 shares = vault.deposit(INITIAL_DEPOSIT, policyManager);
+
+        // Reserve everything first
+        vault.reserveShares(shares);
+
+        // Now try to reserve more - should return 0 instead of reverting
+        uint256 reserved = vault.reserveShares(1000 * 10**18);
+        vm.stopPrank();
+
+        assertEq(reserved, 0, "Should reserve 0 when vault is fully reserved");
+        assertEq(vault.totalReservedShares(), shares, "Total reserved unchanged");
     }
 
     function test_UnreserveShares() public {
@@ -268,10 +291,11 @@ contract UnderwriterVaultTest is Test {
 
         reserveAmount = bound(reserveAmount, 1, shares);
 
-        bool success = vault.reserveShares(reserveAmount);
+        // reserveAmount is bounded within available shares, so full reservation expected
+        uint256 reserved = vault.reserveShares(reserveAmount);
         vm.stopPrank();
 
-        assertTrue(success, "Reservation should succeed");
+        assertEq(reserved, reserveAmount, "Should fully reserve when within capacity");
         assertEq(vault.totalReservedShares(), reserveAmount, "Reserved shares mismatch");
     }
 

@@ -7,7 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 interface IUnderwriterVault is IERC4626 {
-    function reserveShares(uint256 shares) external returns (bool);
+    function reserveShares(uint256 shares) external returns (uint256 reserved);
     function unreserveShares(uint256 shares) external returns (bool);
     function withdrawForPayout(uint256 assets, address receiver, uint256 reservedShares) external returns (uint256 shares);
 }
@@ -70,6 +70,7 @@ contract policyManager is ERC1155, Ownable {
     mapping(uint256 => Policy) public policies;
     mapping(uint256 => address) public holderOf; // always current holder (since supply=1)
     mapping(uint256 => uint256) public reservedShares; // shares reserved per policy
+    uint256 public totalActiveCoverage; // sum of maxCoverage across all active policies
     address public oracle;
 
     constructor(IERC20 asset_, IUnderwriterVault vault_, string memory uri_) //vault_ is the underwriter address
@@ -154,10 +155,12 @@ contract policyManager is ERC1155, Ownable {
         asset.approve(address(vault), premium);
         vault.deposit(premium, address(this));
 
-        // Reserve shares to cover maxCoverage
+        // Reserve up to the shares needed for maxCoverage.
+        // If vault is underfunded, partial reservation is accepted - payout will
+        // be pro-rata based on totalActiveCoverage at trigger time.
         uint256 sharesToReserve = vault.previewWithdraw(maxCoverage);
-        require(vault.reserveShares(sharesToReserve), "reservation failed");
-        reservedShares[id] = sharesToReserve;
+        reservedShares[id] = vault.reserveShares(sharesToReserve);
+        totalActiveCoverage += maxCoverage;
 
         _mint(receiver, id, 1, ""); // supply fixed to 1
 
@@ -204,10 +207,10 @@ contract policyManager is ERC1155, Ownable {
                 paid: false
             });
 
-            // Reserve shares to cover maxCoverage
+            // Reserve up to the shares needed; partial reservation accepted for pro-rata payouts.
             uint256 sharesToReserve = vault.previewWithdraw(in_.maxCoverage);
-            require(vault.reserveShares(sharesToReserve), "reservation failed");
-            reservedShares[id] = sharesToReserve;
+            reservedShares[id] = vault.reserveShares(sharesToReserve);
+            totalActiveCoverage += in_.maxCoverage;
 
             _mint(receiver, id, 1, "");
 
@@ -235,15 +238,26 @@ contract policyManager is ERC1155, Ownable {
         address holder = holderOf[id];
         require(holder != address(0), "no holder");
 
-        // Calculate what the reserved shares are worth now
+        // Pro-rata payout: each policy receives a share of vault assets proportional
+        // to its maxCoverage. If vault is fully funded (totalAssets >= totalActiveCoverage),
+        // the full requested payout is paid. Otherwise each policy is paid proportionally.
         uint256 reserved = reservedShares[id];
-        uint256 maxRedeemable = vault.previewRedeem(reserved);
+        uint256 vaultAssets = vault.totalAssets();
+        uint256 totalCoverage = totalActiveCoverage;
 
-        // Dynamic payout: pay full amount if possible, otherwise pay what's available
-        uint256 actualPayout = (maxRedeemable >= payout) ? payout : maxRedeemable;
+        uint256 proRataMax = totalCoverage > 0
+            ? (vaultAssets * p.maxCoverage) / totalCoverage
+            : 0;
+        uint256 actualPayout = payout < proRataMax ? payout : proRataMax;
+
+        // Also cap by what the reserved shares can actually redeem (protects against
+        // payout exceeding this policy's locked collateral).
+        uint256 maxFromReserved = vault.previewRedeem(reserved);
+        if (actualPayout > maxFromReserved) actualPayout = maxFromReserved;
 
         p.paid = true;
         reservedShares[id] = 0;
+        totalActiveCoverage -= p.maxCoverage;
 
         // Withdraw using special payout function that handles reserved shares
         vault.withdrawForPayout(actualPayout, holder, reserved);
@@ -266,6 +280,7 @@ contract policyManager is ERC1155, Ownable {
         // Unreserve the shares so underwriters can withdraw
         require(vault.unreserveShares(reserved), "unreserve failed");
         reservedShares[id] = 0;
+        totalActiveCoverage -= p.maxCoverage;
 
         emit PolicyExpiredReleased(id, reserved);
     }
@@ -285,6 +300,7 @@ contract policyManager is ERC1155, Ownable {
             p.paid = true;
             require(vault.unreserveShares(reserved), "unreserve failed");
             reservedShares[id] = 0;
+            totalActiveCoverage -= p.maxCoverage;
 
             emit PolicyExpiredReleased(id, reserved);
         }

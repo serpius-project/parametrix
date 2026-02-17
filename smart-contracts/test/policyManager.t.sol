@@ -297,50 +297,75 @@ contract PolicyManagerTest is Test {
 
     /* ============ Payout Tests - Partial Coverage (Underfunded Vault) ============ */
 
-    function test_TriggerPayoutPartialCoverageWhenUnderfunded() public {
-        // Create multiple policies to drain most of the vault
-        // This simulates a scenario where multiple claims happen and vault becomes underfunded
-        uint256 numPolicies = 10;
-        uint256[] memory policyIds = new uint256[](numPolicies);
+    // Helper that creates a fresh vault+manager with no underwriter capital.
+    // The only assets are the premiums paid by buyers themselves.
+    function _deployUnderfundedSystem()
+        internal
+        returns (underwriterVault freshVault, policyManager freshManager)
+    {
+        freshVault = new underwriterVault(
+            asset,
+            "Fresh Vault",
+            "FV",
+            VAULT_CAP,
+            feeRecipient
+        );
+        freshManager = new policyManager(
+            asset,
+            IUnderwriterVault(address(freshVault)),
+            "https://api.parametrix.com/policy/{id}"
+        );
+        freshVault.setPolicyManager(address(freshManager));
+        // oracle stays as address(this) (set in constructor)
+    }
 
-        // Buy 10 policies, each with high coverage
+    function test_TriggerPayoutPartialCoverageWhenUnderfunded() public {
+        // Deploy a vault with NO underwriter capital - only premiums are in the vault.
+        // Verify that policyholders receive pro-rata payouts proportional to their coverage.
+        (underwriterVault freshVault, policyManager freshManager) = _deployUnderfundedSystem();
+
+        uint256 aliceCoverage = 1000 * 10**18;
+        uint256 alicePremium  =   50 * 10**18;
+        uint256 bobCoverage   = 2000 * 10**18;
+        uint256 bobPremium    =   70 * 10**18;
+        uint256 totalPremiums = alicePremium + bobPremium; // 120e18
+
         vm.startPrank(alice);
-        for (uint i = 0; i < numPolicies; i++) {
-            asset.mint(alice, 1000 * 10**18);
-            asset.approve(address(manager), 1000 * 10**18);
-            policyIds[i] = manager.buyPolicy(
-                0,
-                30,
-                100_000 * 10**18, // 100k coverage each
-                1000 * 10**18,
-                35,
-                alice
-            );
-        }
+        asset.approve(address(freshManager), alicePremium);
+        uint256 policyA = freshManager.buyPolicy(0, 30, aliceCoverage, alicePremium, 35, alice);
         vm.stopPrank();
 
-        // Trigger payouts for first 9 policies to drain the vault
-        for (uint i = 0; i < numPolicies - 1; i++) {
-            manager.triggerPayout(policyIds[i], 40, 50_000 * 10**18); // Pay 50k each
-        }
+        vm.startPrank(bob);
+        asset.approve(address(freshManager), bobPremium);
+        uint256 policyB = freshManager.buyPolicy(0, 30, bobCoverage, bobPremium, 35, bob);
+        vm.stopPrank();
 
-        // Now trigger the last policy - vault should be underfunded
-        uint256 lastPolicyId = policyIds[numPolicies - 1];
-        uint256 reserved = manager.reservedShares(lastPolicyId);
-        uint256 actualAvailable = vault.previewRedeem(reserved);
-        uint256 requestedPayout = 100_000 * 10**18;
+        assertEq(freshVault.totalAssets(), totalPremiums, "Vault should only hold premiums");
+        assertEq(freshManager.totalActiveCoverage(), aliceCoverage + bobCoverage, "Coverage tracked");
 
-        uint256 aliceBalanceBefore = asset.balanceOf(alice);
+        // -- Alice claims first --
+        uint256 aliceBefore = asset.balanceOf(alice);
+        freshManager.triggerPayout(policyA, 40, aliceCoverage); // request full maxCoverage
+        uint256 alicePayout = asset.balanceOf(alice) - aliceBefore;
 
-        // Trigger final payout
-        manager.triggerPayout(lastPolicyId, 40, requestedPayout);
+        // Expected: 120e18 * 1000/3000 = 40e18
+        uint256 expectedAlice = totalPremiums * aliceCoverage / (aliceCoverage + bobCoverage);
+        assertApproxEqAbs(alicePayout, expectedAlice, 1, "Alice pro-rata payout");
+        assertLt(alicePayout, aliceCoverage, "Alice paid less than maxCoverage (underfunded)");
 
-        uint256 aliceBalanceAfter = asset.balanceOf(alice);
-        uint256 actualPayout = aliceBalanceAfter - aliceBalanceBefore;
+        // -- Bob claims after Alice --
+        uint256 bobBefore = asset.balanceOf(bob);
+        freshManager.triggerPayout(policyB, 40, bobCoverage);
+        uint256 bobPayout = asset.balanceOf(bob) - bobBefore;
 
-        // Should receive less than requested due to vault being drained
-        assertLt(actualPayout, requestedPayout, "Payout should be less than requested");
-        assertApproxEqRel(actualPayout, actualAvailable, 0.02e18, "Should pay what shares are worth");
+        assertLt(bobPayout, bobCoverage, "Bob paid less than maxCoverage (underfunded)");
+        assertGt(bobPayout, 0, "Bob still receives something");
+
+        // Invariant: total paid out never exceeds initial vault assets
+        assertLe(alicePayout + bobPayout, totalPremiums, "Cannot pay more than vault held");
+
+        // Coverage fully cleared
+        assertEq(freshManager.totalActiveCoverage(), 0, "All coverage cleared after payouts");
     }
 
     /* ============ Payout Validation Tests ============ */
@@ -663,5 +688,183 @@ contract PolicyManagerTest is Test {
         uint256 totalPolicies = uint256(numUsers) * uint256(numPoliciesPerUser);
         assertGt(vault.totalReservedShares(), 0, "Shares should be reserved");
         assertEq(manager.nextId() - 1, totalPolicies, "Policy count should match");
+    }
+
+    /* ============ Pro-Rata Payout Tests ============ */
+
+    // Exactly the design scenario described for the system:
+    //   User 1: $1,000 coverage, $50 premium
+    //   User 2: $2,000 coverage, $70 premium
+    //   Vault funded only by premiums ($120 total)
+    //   If vault >= $3,000  -> full payouts ($1,000 and $2,000)
+    //   If vault < $3,000   -> pro-rata  (user1 ~$40, user2 ~$70)
+    function test_ProRataPayoutTwoUsersUnderfunded() public {
+        (underwriterVault fv, policyManager fm) = _deployUnderfundedSystem();
+
+        uint256 cov1 = 1000 * 10**18;
+        uint256 pre1 =   50 * 10**18;
+        uint256 cov2 = 2000 * 10**18;
+        uint256 pre2 =   70 * 10**18;
+
+        vm.startPrank(alice);
+        asset.approve(address(fm), pre1);
+        uint256 p1 = fm.buyPolicy(0, 30, cov1, pre1, 35, alice);
+        vm.stopPrank();
+
+        vm.startPrank(bob);
+        asset.approve(address(fm), pre2);
+        uint256 p2 = fm.buyPolicy(0, 30, cov2, pre2, 35, bob);
+        vm.stopPrank();
+
+        uint256 totalAssets = fv.totalAssets(); // 120e18
+        uint256 totalCov    = cov1 + cov2;      // 3000e18
+
+        // Alice claims: expected = 120 * 1000/3000 = 40
+        uint256 aliceBefore = asset.balanceOf(alice);
+        fm.triggerPayout(p1, 40, cov1);
+        uint256 alicePayout = asset.balanceOf(alice) - aliceBefore;
+        assertApproxEqAbs(alicePayout, totalAssets * cov1 / totalCov, 1, "Alice pro-rata");
+
+        // Bob claims: remaining vault * 2000/2000
+        uint256 remainingAssets = fv.totalAssets();
+        uint256 bobBefore = asset.balanceOf(bob);
+        fm.triggerPayout(p2, 40, cov2);
+        uint256 bobPayout = asset.balanceOf(bob) - bobBefore;
+        // Bob is capped by reserved shares (70e18), not by full pro-rata (remainingAssets)
+        assertLe(bobPayout, remainingAssets, "Bob payout within remaining assets");
+        assertGt(bobPayout, 0, "Bob receives a payout");
+
+        assertLe(alicePayout + bobPayout, totalAssets, "Total payout within vault assets");
+        assertEq(fm.totalActiveCoverage(), 0, "All coverage cleared");
+    }
+
+    function test_ProRataPayoutTwoUsersFullyFunded() public {
+        // With sufficient underwriter capital, both users get their FULL requested payout.
+        uint256 cov1 = 1000 * 10**18;
+        uint256 pre1 =   50 * 10**18;
+        uint256 cov2 = 2000 * 10**18;
+        uint256 pre2 =   70 * 10**18;
+        // Vault already has 1M from underwriter (setUp) - easily covers 3k total coverage.
+
+        vm.startPrank(alice);
+        asset.approve(address(manager), pre1);
+        uint256 p1 = manager.buyPolicy(0, 30, cov1, pre1, 35, alice);
+        vm.stopPrank();
+
+        vm.startPrank(bob);
+        asset.approve(address(manager), pre2);
+        uint256 p2 = manager.buyPolicy(0, 30, cov2, pre2, 35, bob);
+        vm.stopPrank();
+
+        uint256 aliceBefore = asset.balanceOf(alice);
+        manager.triggerPayout(p1, 40, cov1); // request full 1000
+        // 0.1% tolerance: Alice's payout is exact since she goes first.
+        assertApproxEqRel(asset.balanceOf(alice) - aliceBefore, cov1, 0.001e18, "Alice receives ~full coverage");
+
+        uint256 bobBefore = asset.balanceOf(bob);
+        manager.triggerPayout(p2, 40, cov2); // request full 2000
+        // After Alice's payout, the share price dips slightly (~0.1%) because
+        // the vault has fewer assets but the same share supply. Bob's payout
+        // is still effectively full coverage within that rounding.
+        assertApproxEqRel(asset.balanceOf(bob) - bobBefore, cov2, 0.002e18, "Bob receives ~full coverage");
+    }
+
+    function test_TotalActiveCoverageTracking() public {
+        uint256 cov1 = 5000 * 10**18;
+        uint256 cov2 = 3000 * 10**18;
+        uint256 pre  = 1000 * 10**18;
+
+        assertEq(manager.totalActiveCoverage(), 0, "Starts at zero");
+
+        vm.startPrank(alice);
+        asset.approve(address(manager), pre);
+        uint256 p1 = manager.buyPolicy(0, 30, cov1, pre, 35, alice);
+        vm.stopPrank();
+        assertEq(manager.totalActiveCoverage(), cov1, "After first purchase");
+
+        vm.startPrank(bob);
+        asset.approve(address(manager), pre);
+        uint256 p2 = manager.buyPolicy(0, 30, cov2, pre, 35, bob);
+        vm.stopPrank();
+        assertEq(manager.totalActiveCoverage(), cov1 + cov2, "After second purchase");
+
+        // Payout decrements coverage
+        manager.triggerPayout(p1, 40, cov1);
+        assertEq(manager.totalActiveCoverage(), cov2, "After first payout");
+
+        // Expiry also decrements coverage
+        vm.warp(block.timestamp + 31 days);
+        manager.releaseExpiredPolicy(p2);
+        assertEq(manager.totalActiveCoverage(), 0, "After expiry release");
+    }
+
+    function test_BuyPolicySucceedsWithNoUnderwriterCapital() public {
+        // The key behavioral change: purchasing a policy no longer reverts even when
+        // the vault has no underwriter capital beyond the premium itself.
+        (underwriterVault fv, policyManager fm) = _deployUnderfundedSystem();
+
+        uint256 coverage = 100_000 * 10**18; // 100k coverage
+        uint256 premium  =     100 * 10**18; // only 100 in vault after purchase
+
+        vm.startPrank(alice);
+        asset.approve(address(fm), premium);
+        uint256 policyId = fm.buyPolicy(0, 30, coverage, premium, 35, alice);
+        vm.stopPrank();
+
+        assertEq(policyId, 1, "Policy created successfully");
+        assertEq(fm.totalActiveCoverage(), coverage, "Coverage tracked");
+        assertEq(fv.totalAssets(), premium, "Vault holds the premium");
+
+        // Reserved shares is at most what the vault has (the premium), not the full coverage
+        uint256 reserved = fm.reservedShares(policyId);
+        uint256 maxPossibleShares = fv.previewWithdraw(coverage);
+        assertLt(reserved, maxPossibleShares, "Only partial shares reserved (vault underfunded)");
+    }
+
+    /* ============ Pro-Rata Fuzz Tests ============ */
+
+    // Verifies the pro-rata payout invariants hold for any number of users with
+    // varying coverage amounts when the vault holds only premium income.
+    function testFuzz_ProRataPayoutManyUsers(uint8 numUsers) public {
+        numUsers = uint8(bound(numUsers, 2, 8));
+
+        (underwriterVault fv, policyManager fm) = _deployUnderfundedSystem();
+
+        uint256[] memory coverages  = new uint256[](numUsers);
+        uint256[] memory policyIds  = new uint256[](numUsers);
+        address[]  memory users     = new address[](numUsers);
+        uint256 totalCoverage;
+
+        // Each user i gets (i+1)*1000 coverage and (i+1)*50 premium
+        for (uint8 i = 0; i < numUsers; i++) {
+            users[i]    = address(uint160(0x9000 + i));
+            coverages[i] = (uint256(i) + 1) * 1000 * 10**18;
+            uint256 premium = (uint256(i) + 1) * 50 * 10**18;
+            totalCoverage += coverages[i];
+
+            asset.mint(users[i], premium);
+            vm.startPrank(users[i]);
+            asset.approve(address(fm), premium);
+            policyIds[i] = fm.buyPolicy(0, 30, coverages[i], premium, 35, users[i]);
+            vm.stopPrank();
+        }
+
+        assertEq(fm.totalActiveCoverage(), totalCoverage, "Coverage tracked correctly");
+
+        uint256 initialVaultAssets = fv.totalAssets();
+        uint256 totalPaidOut;
+
+        for (uint8 i = 0; i < numUsers; i++) {
+            uint256 balBefore = asset.balanceOf(users[i]);
+            fm.triggerPayout(policyIds[i], 40, coverages[i]);
+            uint256 payout = asset.balanceOf(users[i]) - balBefore;
+
+            assertLe(payout, coverages[i], "Payout never exceeds maxCoverage");
+            totalPaidOut += payout;
+        }
+
+        // Core invariant: vault never pays out more than it held
+        assertLe(totalPaidOut, initialVaultAssets, "Total payouts within vault assets");
+        assertEq(fm.totalActiveCoverage(), 0, "All coverage fully cleared");
     }
 }

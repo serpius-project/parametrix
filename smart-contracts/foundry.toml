@@ -3,4 +3,7 @@ src = "src"
 out = "out"
 libs = ["lib"]
 
+# Allow scripts to write deployment output files
+fs_permissions = [{ access = "write", path = "./deployments" }]
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
