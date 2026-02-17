@@ -25,7 +25,7 @@ import {policyManager} from "../src/policyManager.sol";
 contract BuyPolicyScript is Script {
 
     // ── Update these after running Deploy.s.sol ─────────────────────────────
-    address constant POLICY_MANAGER_ADDRESS = address(0x29FbE48c63B2877C155F45E7CA176F3e664aE672);
+    address constant POLICY_MANAGER_ADDRESS = address(0x4b0aF97a249Dbf50203C7Cadb8Ee628DC767F09f);
     address constant ASSET_TOKEN_ADDRESS    = address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48); 
 
     // ── Policy configuration ─────────────────────────────────────────────────

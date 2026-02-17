@@ -16127,218 +16127,135 @@ var sendErrorResponse = (error) => {
 var zeroAddress = "0x0000000000000000000000000000000000000000";
 init_decodeFunctionResult();
 init_encodeFunctionData();
-var BalanceReader = [
+var PolicyManager = [
   {
-    inputs: [{ internalType: "address[]", name: "addresses", type: "address[]" }],
-    name: "getNativeBalances",
-    outputs: [{ internalType: "uint256[]", name: "", type: "uint256[]" }],
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "uint8", name: "hazardId", type: "uint8" },
+      { indexed: false, internalType: "string", name: "name", type: "string" }
+    ],
+    name: "HazardAdded",
+    type: "event"
+  },
+  {
+    anonymous: false,
+    inputs: [{ indexed: true, internalType: "uint8", name: "hazardId", type: "uint8" }],
+    name: "HazardRemoved",
+    type: "event"
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "uint256", name: "policyId", type: "uint256" },
+      { indexed: true, internalType: "address", name: "holder", type: "address" },
+      { indexed: false, internalType: "uint8", name: "hazard", type: "uint8" },
+      { indexed: false, internalType: "uint256", name: "start", type: "uint256" },
+      { indexed: false, internalType: "uint256", name: "end", type: "uint256" },
+      { indexed: false, internalType: "uint256", name: "maxCoverage", type: "uint256" },
+      { indexed: false, internalType: "uint256", name: "triggerThreshold", type: "uint256" },
+      { indexed: false, internalType: "int32", name: "lat", type: "int32" },
+      { indexed: false, internalType: "int32", name: "lon", type: "int32" }
+    ],
+    name: "PolicyPurchased",
+    type: "event"
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "uint256", name: "policyId", type: "uint256" },
+      { indexed: true, internalType: "address", name: "holder", type: "address" },
+      { indexed: false, internalType: "uint256", name: "observedValue", type: "uint256" },
+      { indexed: false, internalType: "uint256", name: "requestedPayout", type: "uint256" },
+      { indexed: false, internalType: "uint256", name: "actualPayout", type: "uint256" }
+    ],
+    name: "PayoutTriggered",
+    type: "event"
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "uint256", name: "policyId", type: "uint256" },
+      { indexed: false, internalType: "uint256", name: "sharesReleased", type: "uint256" }
+    ],
+    name: "PolicyExpiredReleased",
+    type: "event"
+  },
+  {
+    inputs: [{ internalType: "uint8", name: "", type: "uint8" }],
+    name: "validHazards",
+    outputs: [{ internalType: "bool", name: "", type: "bool" }],
     stateMutability: "view",
     type: "function"
   },
   {
-    inputs: [],
-    name: "typeAndVersion",
+    inputs: [{ internalType: "uint8", name: "", type: "uint8" }],
+    name: "hazardNames",
     outputs: [{ internalType: "string", name: "", type: "string" }],
     stateMutability: "view",
     type: "function"
-  }
-];
-var IERC20 = [
-  {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: true,
-        internalType: "address",
-        name: "owner",
-        type: "address"
-      },
-      {
-        indexed: true,
-        internalType: "address",
-        name: "spender",
-        type: "address"
-      },
-      {
-        indexed: false,
-        internalType: "uint256",
-        name: "value",
-        type: "uint256"
-      }
-    ],
-    name: "Approval",
-    type: "event"
   },
   {
-    anonymous: false,
-    inputs: [
-      { indexed: true, internalType: "address", name: "from", type: "address" },
-      { indexed: true, internalType: "address", name: "to", type: "address" },
-      {
-        indexed: false,
-        internalType: "uint256",
-        name: "value",
-        type: "uint256"
-      }
+    inputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    name: "policies",
+    outputs: [
+      { internalType: "uint8", name: "hazard", type: "uint8" },
+      { internalType: "uint40", name: "start", type: "uint40" },
+      { internalType: "uint40", name: "end", type: "uint40" },
+      { internalType: "int32", name: "lat", type: "int32" },
+      { internalType: "int32", name: "lon", type: "int32" },
+      { internalType: "uint256", name: "maxCoverage", type: "uint256" },
+      { internalType: "uint256", name: "premium", type: "uint256" },
+      { internalType: "uint256", name: "triggerThreshold", type: "uint256" },
+      { internalType: "bool", name: "paid", type: "bool" }
     ],
-    name: "Transfer",
-    type: "event"
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "owner", type: "address" },
-      { internalType: "address", name: "spender", type: "address" }
-    ],
-    name: "allowance",
-    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function"
   },
   {
-    inputs: [
-      { internalType: "address", name: "spender", type: "address" },
-      { internalType: "uint256", name: "amount", type: "uint256" }
-    ],
-    name: "approve",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "nonpayable",
-    type: "function"
-  },
-  {
-    inputs: [{ internalType: "address", name: "account", type: "address" }],
-    name: "balanceOf",
-    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    inputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    name: "holderOf",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
     stateMutability: "view",
     type: "function"
   },
   {
     inputs: [],
-    name: "totalSupply",
+    name: "oracle",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function"
+  },
+  {
+    inputs: [],
+    name: "nextId",
     outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function"
   },
   {
     inputs: [
-      { internalType: "address", name: "recipient", type: "address" },
-      { internalType: "uint256", name: "amount", type: "uint256" }
+      { internalType: "uint8", name: "hazardId", type: "uint8" },
+      { internalType: "string", name: "name", type: "string" }
     ],
-    name: "transfer",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "nonpayable",
-    type: "function"
-  },
-  {
-    inputs: [
-      { internalType: "address", name: "sender", type: "address" },
-      { internalType: "address", name: "recipient", type: "address" },
-      { internalType: "uint256", name: "amount", type: "uint256" }
-    ],
-    name: "transferFrom",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "nonpayable",
-    type: "function"
-  }
-];
-var MessageEmitter = [
-  {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: true,
-        internalType: "address",
-        name: "emitter",
-        type: "address"
-      },
-      {
-        indexed: true,
-        internalType: "uint256",
-        name: "timestamp",
-        type: "uint256"
-      },
-      {
-        indexed: false,
-        internalType: "string",
-        name: "message",
-        type: "string"
-      }
-    ],
-    name: "MessageEmitted",
-    type: "event"
-  },
-  {
-    inputs: [{ internalType: "string", name: "message", type: "string" }],
-    name: "emitMessage",
+    name: "addHazardType",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function"
   },
   {
-    inputs: [{ internalType: "address", name: "emitter", type: "address" }],
-    name: "getLastMessage",
-    outputs: [{ internalType: "string", name: "", type: "string" }],
-    stateMutability: "view",
+    inputs: [{ internalType: "uint8", name: "hazardId", type: "uint8" }],
+    name: "removeHazardType",
+    outputs: [],
+    stateMutability: "nonpayable",
     type: "function"
   },
   {
     inputs: [
-      { internalType: "address", name: "emitter", type: "address" },
-      { internalType: "uint256", name: "timestamp", type: "uint256" }
+      { internalType: "uint256", name: "id", type: "uint256" },
+      { internalType: "uint256", name: "observedValue", type: "uint256" },
+      { internalType: "uint256", name: "payout", type: "uint256" }
     ],
-    name: "getMessage",
-    outputs: [{ internalType: "string", name: "", type: "string" }],
-    stateMutability: "view",
-    type: "function"
-  },
-  {
-    inputs: [],
-    name: "typeAndVersion",
-    outputs: [{ internalType: "string", name: "", type: "string" }],
-    stateMutability: "view",
-    type: "function"
-  }
-];
-var ReserveManager = [
-  {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: false,
-        internalType: "uint256",
-        name: "requestId",
-        type: "uint256"
-      }
-    ],
-    name: "RequestReserveUpdate",
-    type: "event"
-  },
-  {
-    inputs: [],
-    name: "lastTotalMinted",
-    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function"
-  },
-  {
-    inputs: [],
-    name: "lastTotalReserve",
-    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function"
-  },
-  {
-    inputs: [
-      {
-        components: [
-          { internalType: "uint256", name: "totalMinted", type: "uint256" },
-          { internalType: "uint256", name: "totalReserve", type: "uint256" }
-        ],
-        internalType: "struct UpdateReserves",
-        name: "updateReserves",
-        type: "tuple"
-      }
-    ],
-    name: "updateReserves",
+    name: "triggerPayout",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function"
@@ -16346,101 +16263,48 @@ var ReserveManager = [
 ];
 var configSchema = exports_external.object({
   schedule: exports_external.string(),
-  url: exports_external.string(),
+  parametrixApiUrl: exports_external.string(),
+  lookbackMonths: exports_external.number().int().min(1).max(12),
   evms: exports_external.array(exports_external.object({
-    tokenAddress: exports_external.string(),
-    porAddress: exports_external.string(),
-    proxyAddress: exports_external.string(),
-    balanceReaderAddress: exports_external.string(),
-    messageEmitterAddress: exports_external.string(),
+    policyManagerAddress: exports_external.string(),
     chainSelectorName: exports_external.string(),
     gasLimit: exports_external.string()
   }))
 });
-var safeJsonStringify = (obj) => JSON.stringify(obj, (_, value2) => typeof value2 === "bigint" ? value2.toString() : value2, 2);
-var fetchReserveInfo = (sendRequester, config) => {
-  const response = sendRequester.sendRequest({ method: "GET", url: config.url }).result();
+var HAZARD_ID_TO_NAME = {
+  0: "heatwave",
+  1: "flood",
+  2: "drought"
+};
+var createPolicyFetcher = (policy) => (sendRequester, config) => {
+  const url = `${config.parametrixApiUrl}/check-event`;
+  const bodyJson = JSON.stringify({
+    lat: policy.lat,
+    lon: policy.lon,
+    hazard: policy.hazardName,
+    threshold: policy.triggerThreshold,
+    payout: Number(policy.maxCoverage),
+    lookback_months: config.lookbackMonths
+  });
+  const bodyBase64 = Buffer.from(bodyJson, "utf-8").toString("base64");
+  const response = sendRequester.sendRequest({
+    method: "POST",
+    url,
+    body: bodyBase64,
+    headers: { "Content-Type": "application/json" }
+  }).result();
   if (response.statusCode !== 200) {
-    throw new Error(`HTTP request failed with status: ${response.statusCode}`);
+    throw new Error(`Parametrix API request failed with status: ${response.statusCode}`);
   }
   const responseText = Buffer.from(response.body).toString("utf-8");
-  const porResp = JSON.parse(responseText);
-  if (porResp.ripcord) {
-    throw new Error("ripcord is true");
-  }
+  const parsed = JSON.parse(responseText);
   return {
-    lastUpdated: new Date(porResp.updatedAt),
-    totalReserve: porResp.totalToken
+    triggered: parsed.triggered ? 1 : 0,
+    value: Number(parsed.value ?? 0),
+    threshold: Number(parsed.threshold ?? policy.triggerThreshold)
   };
 };
-var fetchNativeTokenBalance = (runtime2, evmConfig, tokenHolderAddress) => {
-  const network248 = getNetwork({
-    chainFamily: "evm",
-    chainSelectorName: evmConfig.chainSelectorName,
-    isTestnet: true
-  });
-  if (!network248) {
-    throw new Error(`Network not found for chain selector name: ${evmConfig.chainSelectorName}`);
-  }
-  const evmClient = new ClientCapability(network248.chainSelector.selector);
-  const callData = encodeFunctionData({
-    abi: BalanceReader,
-    functionName: "getNativeBalances",
-    args: [[tokenHolderAddress]]
-  });
-  const contractCall = evmClient.callContract(runtime2, {
-    call: encodeCallMsg({
-      from: zeroAddress,
-      to: evmConfig.balanceReaderAddress,
-      data: callData
-    }),
-    blockNumber: LAST_FINALIZED_BLOCK_NUMBER
-  }).result();
-  const balances = decodeFunctionResult({
-    abi: BalanceReader,
-    functionName: "getNativeBalances",
-    data: bytesToHex(contractCall.data)
-  });
-  if (!balances || balances.length === 0) {
-    throw new Error("No balances returned from contract");
-  }
-  return balances[0];
-};
-var getTotalSupply = (runtime2) => {
-  const evms = runtime2.config.evms;
-  let totalSupply = 0n;
-  for (const evmConfig of evms) {
-    const network248 = getNetwork({
-      chainFamily: "evm",
-      chainSelectorName: evmConfig.chainSelectorName,
-      isTestnet: true
-    });
-    if (!network248) {
-      throw new Error(`Network not found for chain selector name: ${evmConfig.chainSelectorName}`);
-    }
-    const evmClient = new ClientCapability(network248.chainSelector.selector);
-    const callData = encodeFunctionData({
-      abi: IERC20,
-      functionName: "totalSupply"
-    });
-    const contractCall = evmClient.callContract(runtime2, {
-      call: encodeCallMsg({
-        from: zeroAddress,
-        to: evmConfig.tokenAddress,
-        data: callData
-      }),
-      blockNumber: LAST_FINALIZED_BLOCK_NUMBER
-    }).result();
-    const supply = decodeFunctionResult({
-      abi: IERC20,
-      functionName: "totalSupply",
-      data: bytesToHex(contractCall.data)
-    });
-    totalSupply += supply;
-  }
-  return totalSupply;
-};
-var updateReserves = (runtime2, totalSupply, totalReserveScaled) => {
+var getActivePolicies = (runtime2) => {
   const evmConfig = runtime2.config.evms[0];
   const network248 = getNetwork({
     chainFamily: "evm",
@@ -16451,56 +16315,95 @@ var updateReserves = (runtime2, totalSupply, totalReserveScaled) => {
     throw new Error(`Network not found for chain selector name: ${evmConfig.chainSelectorName}`);
   }
   const evmClient = new ClientCapability(network248.chainSelector.selector);
-  runtime2.log(`Updating reserves totalSupply ${totalSupply.toString()} totalReserveScaled ${totalReserveScaled.toString()}`);
-  const callData = encodeFunctionData({
-    abi: ReserveManager,
-    functionName: "updateReserves",
-    args: [
-      {
-        totalMinted: totalSupply,
-        totalReserve: totalReserveScaled
-      }
-    ]
+  const nextIdCallData = encodeFunctionData({
+    abi: PolicyManager,
+    functionName: "nextId"
   });
-  const reportResponse = runtime2.report({
-    encodedPayload: hexToBase64(callData),
-    encoderName: "evm",
-    signingAlgo: "ecdsa",
-    hashingAlgo: "keccak256"
+  const nextIdResponse = evmClient.callContract(runtime2, {
+    call: encodeCallMsg({
+      from: zeroAddress,
+      to: evmConfig.policyManagerAddress,
+      data: nextIdCallData
+    }),
+    blockNumber: LAST_FINALIZED_BLOCK_NUMBER
   }).result();
-  const resp = evmClient.writeReport(runtime2, {
-    receiver: evmConfig.proxyAddress,
-    report: reportResponse,
-    gasConfig: {
-      gasLimit: evmConfig.gasLimit
+  const nextId = decodeFunctionResult({
+    abi: PolicyManager,
+    functionName: "nextId",
+    data: bytesToHex(nextIdResponse.data)
+  });
+  runtime2.log(`Next policy ID: ${nextId.toString()}`);
+  const policies = [];
+  const currentTime = Math.floor(Date.now() / 1000);
+  for (let id = 1;id < Number(nextId); id++) {
+    try {
+      const policyCallData = encodeFunctionData({
+        abi: PolicyManager,
+        functionName: "policies",
+        args: [BigInt(id)]
+      });
+      const policyResponse = evmClient.callContract(runtime2, {
+        call: encodeCallMsg({
+          from: zeroAddress,
+          to: evmConfig.policyManagerAddress,
+          data: policyCallData
+        }),
+        blockNumber: LAST_FINALIZED_BLOCK_NUMBER
+      }).result();
+      const policyData = decodeFunctionResult({
+        abi: PolicyManager,
+        functionName: "policies",
+        data: bytesToHex(policyResponse.data)
+      });
+      const holderCallData = encodeFunctionData({
+        abi: PolicyManager,
+        functionName: "holderOf",
+        args: [BigInt(id)]
+      });
+      const holderResponse = evmClient.callContract(runtime2, {
+        call: encodeCallMsg({
+          from: zeroAddress,
+          to: evmConfig.policyManagerAddress,
+          data: holderCallData
+        }),
+        blockNumber: LAST_FINALIZED_BLOCK_NUMBER
+      }).result();
+      const holder = decodeFunctionResult({
+        abi: PolicyManager,
+        functionName: "holderOf",
+        data: bytesToHex(holderResponse.data)
+      });
+      const [hazard, start, end, lat, lon, maxCoverage, premium, triggerThreshold, paid] = policyData;
+      if (!paid && Number(end) > currentTime) {
+        const hazardNum = Number(hazard);
+        const hazardName = HAZARD_ID_TO_NAME[hazardNum];
+        if (!hazardName) {
+          runtime2.log(`Policy ${id}: Unknown hazard type ${hazardNum} - skipping`);
+          continue;
+        }
+        policies.push({
+          id,
+          hazard: hazardNum,
+          hazardName,
+          start: Number(start),
+          end: Number(end),
+          lat: Number(lat) / 1e4,
+          lon: Number(lon) / 1e4,
+          maxCoverage,
+          premium,
+          triggerThreshold: Number(triggerThreshold),
+          paid,
+          holder
+        });
+      }
+    } catch (error) {
+      runtime2.log(`Error fetching policy ${id}: ${error}`);
     }
-  }).result();
-  const txStatus = resp.txStatus;
-  if (txStatus !== TxStatus.SUCCESS) {
-    throw new Error(`Failed to write report: ${resp.errorMessage || txStatus}`);
   }
-  const txHash = resp.txHash || new Uint8Array(32);
-  runtime2.log(`Write report transaction succeeded at txHash: ${bytesToHex(txHash)}`);
-  return txHash.toString();
+  return policies;
 };
-var doPOR = (runtime2) => {
-  runtime2.log(`fetching por url ${runtime2.config.url}`);
-  const httpCapability = new ClientCapability2;
-  const reserveInfo = httpCapability.sendRequest(runtime2, fetchReserveInfo, ConsensusAggregationByFields({
-    lastUpdated: median,
-    totalReserve: median
-  }))(runtime2.config).result();
-  runtime2.log(`ReserveInfo ${safeJsonStringify(reserveInfo)}`);
-  const totalSupply = getTotalSupply(runtime2);
-  runtime2.log(`TotalSupply ${totalSupply.toString()}`);
-  const totalReserveScaled = BigInt(reserveInfo.totalReserve * 1000000000000000000);
-  runtime2.log(`TotalReserveScaled ${totalReserveScaled.toString()}`);
-  const nativeTokenBalance = fetchNativeTokenBalance(runtime2, runtime2.config.evms[0], runtime2.config.evms[0].tokenAddress);
-  runtime2.log(`NativeTokenBalance ${nativeTokenBalance.toString()}`);
-  updateReserves(runtime2, totalSupply, totalReserveScaled);
-  return reserveInfo.totalReserve.toString();
-};
-var getLastMessage = (runtime2, evmConfig, emitter) => {
+var triggerPayout = (runtime2, policyId, observedValue, payoutAmount) => {
+  const evmConfig = runtime2.config.evms[0];
   const network248 = getNetwork({
     chainFamily: "evm",
     chainSelectorName: evmConfig.chainSelectorName,
@@ -16510,45 +16413,81 @@ var getLastMessage = (runtime2, evmConfig, emitter) => {
     throw new Error(`Network not found for chain selector name: ${evmConfig.chainSelectorName}`);
   }
   const evmClient = new ClientCapability(network248.chainSelector.selector);
+  runtime2.log(`Triggering payout for policy ${policyId}: observedValue=${observedValue}, payout=${payoutAmount.toString()}`);
   const callData = encodeFunctionData({
-    abi: MessageEmitter,
-    functionName: "getLastMessage",
-    args: [emitter]
+    abi: PolicyManager,
+    functionName: "triggerPayout",
+    args: [BigInt(policyId), BigInt(observedValue), payoutAmount]
   });
-  const contractCall = evmClient.callContract(runtime2, {
-    call: encodeCallMsg({
-      from: zeroAddress,
-      to: evmConfig.messageEmitterAddress,
-      data: callData
-    }),
-    blockNumber: LAST_FINALIZED_BLOCK_NUMBER
+  const reportResponse = runtime2.report({
+    encodedPayload: hexToBase64(callData),
+    encoderName: "evm",
+    signingAlgo: "ecdsa",
+    hashingAlgo: "keccak256"
   }).result();
-  const message = decodeFunctionResult({
-    abi: MessageEmitter,
-    functionName: "getLastMessage",
-    data: bytesToHex(contractCall.data)
-  });
-  return message;
+  const resp = evmClient.writeReport(runtime2, {
+    receiver: evmConfig.policyManagerAddress,
+    report: reportResponse,
+    gasConfig: {
+      gasLimit: evmConfig.gasLimit
+    }
+  }).result();
+  const txStatus = resp.txStatus;
+  if (txStatus !== TxStatus.SUCCESS) {
+    throw new Error(`Failed to trigger payout: ${resp.errorMessage || txStatus}`);
+  }
+  const txHash = resp.txHash || new Uint8Array(32);
+  runtime2.log(`Payout triggered successfully at txHash: ${bytesToHex(txHash)}`);
+  return bytesToHex(txHash);
+};
+var checkPoliciesAndTriggerPayouts = (runtime2) => {
+  runtime2.log("Starting policy check...");
+  const activePolicies = getActivePolicies(runtime2);
+  runtime2.log(`Found ${activePolicies.length} active policies`);
+  if (activePolicies.length === 0) {
+    return "No active policies to check";
+  }
+  const httpCapability = new ClientCapability2;
+  let triggeredCount = 0;
+  for (const policy of activePolicies) {
+    try {
+      runtime2.log(`Checking policy ${policy.id}: hazard=${policy.hazardName}, ` + `location=(${policy.lat}, ${policy.lon}), threshold=${policy.triggerThreshold}`);
+      const result = httpCapability.sendRequest(runtime2, createPolicyFetcher(policy), ConsensusAggregationByFields({
+        triggered: median,
+        value: median,
+        threshold: median
+      }))(runtime2.config).result();
+      const isTriggered = result.triggered >= 1;
+      runtime2.log(`Policy ${policy.id}: triggered=${isTriggered}, ` + `value=${result.value}, threshold=${result.threshold}`);
+      if (isTriggered) {
+        runtime2.log(`Policy ${policy.id} TRIGGERED! Observed ${result.value} ` + `(threshold: ${policy.triggerThreshold}). Initiating payout...`);
+        const observedValueInt = Math.round(result.value);
+        triggerPayout(runtime2, policy.id, observedValueInt, policy.maxCoverage);
+        triggeredCount++;
+      }
+    } catch (error) {
+      runtime2.log(`Error processing policy ${policy.id}: ${error}`);
+    }
+  }
+  return `Checked ${activePolicies.length} policies, triggered ${triggeredCount} payouts`;
 };
 var onCronTrigger = (runtime2, payload) => {
   if (!payload.scheduledExecutionTime) {
     throw new Error("Scheduled execution time is required");
   }
-  runtime2.log("Running CronTrigger");
-  return doPOR(runtime2);
+  runtime2.log("Running CronTrigger for policy monitoring");
+  return checkPoliciesAndTriggerPayouts(runtime2);
 };
 var onLogTrigger = (runtime2, payload) => {
-  runtime2.log("Running LogTrigger");
+  runtime2.log("Running LogTrigger - New policy purchased");
   const topics = payload.topics;
-  if (topics.length < 3) {
+  if (topics.length < 2) {
     runtime2.log("Log payload does not contain enough topics");
     throw new Error(`log payload does not contain enough topics ${topics.length}`);
   }
-  const emitter = bytesToHex(topics[1].slice(12));
-  runtime2.log(`Emitter ${emitter}`);
-  const message = getLastMessage(runtime2, runtime2.config.evms[0], emitter);
-  runtime2.log(`Message retrieved from the contract ${message}`);
-  return message;
+  const policyId = BigInt(bytesToHex(topics[1]));
+  runtime2.log(`New policy purchased with ID: ${policyId.toString()}`);
+  return `Policy ${policyId.toString()} registered, will be monitored by cron job`;
 };
 var initWorkflow = (config) => {
   const cronTrigger = new CronCapability;
@@ -16566,7 +16505,7 @@ var initWorkflow = (config) => {
       schedule: config.schedule
     }), onCronTrigger),
     handler(evmClient.logTrigger({
-      addresses: [config.evms[0].messageEmitterAddress]
+      addresses: [config.evms[0].policyManagerAddress]
     }), onLogTrigger)
   ];
 };

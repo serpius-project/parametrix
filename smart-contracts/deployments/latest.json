@@ -1,7 +1,7 @@
 {
   "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-  "vault": "0x664d320727AA4f17e2CB4D5F39C82d7EDf74d3Fe",
-  "policyManager": "0x29FbE48c63B2877C155F45E7CA176F3e664aE672",
+  "vault": "0x13C9403F6921ee4b020d644Db2Ee9d4a5480a080",
+  "policyManager": "0x4b0aF97a249Dbf50203C7Cadb8Ee628DC767F09f",
   "feeRecipient": "0xe8d4b94F256f9522b30f8795C42e17Fa135C1cbF",
   "vaultCap": "10000000000000",
   "depositFeeBps": "50"

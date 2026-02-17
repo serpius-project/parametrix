@@ -93,7 +93,7 @@ const createPolicyFetcher = (policy: Policy) =>
 	(sendRequester: HTTPSendRequester, config: Config): TriggerCheckResult => {
 		const url = `${config.parametrixApiUrl}/check-event`
 
-		const body = JSON.stringify({
+		const bodyJson = JSON.stringify({
 			lat: policy.lat,
 			lon: policy.lon,
 			hazard: policy.hazardName,
@@ -102,10 +102,14 @@ const createPolicyFetcher = (policy: Policy) =>
 			lookback_months: config.lookbackMonths,
 		})
 
+		// CRE SDK expects the body as base64-encoded bytes
+		const bodyBase64 = Buffer.from(bodyJson, 'utf-8').toString('base64')
+
 		const response = sendRequester.sendRequest({
 			method: 'POST',
 			url,
-			body,
+			body: bodyBase64,
+			headers: { 'Content-Type': 'application/json' },
 		}).result()
 
 		if (response.statusCode !== 200) {
