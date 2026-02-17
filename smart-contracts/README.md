@@ -35,8 +35,11 @@ Deploys MockUSDC (testnet), UnderwriterVault, and PolicyManager. Saves addresses
 forge script script/Deploy.s.sol:DeployScript \
   --rpc-url $TENDERLY_RPC_URL \
   --broadcast \
+  --slow \
   -vvvv
 ```
+
+> **Note:** The `--slow` flag is required for Tenderly virtual testnets. Without it, Foundry batch-sends all transactions and Tenderly may process them out of order, causing some contract deployments to silently fail.
 
 After deploying, copy the printed addresses into:
 - `script/BuyPolicy.s.sol` (constants at the top)
