@@ -27,8 +27,8 @@ import { PolicyManager } from '../contracts/abi'
 
 const configSchema = z.object({
 	schedule: z.string(), // Cron schedule for checking policies (e.g., "*/5 * * * *")
-	weatherApiKey: z.string(), // API key for weather data provider
-	weatherApiUrl: z.string(), // Base URL for weather API
+	parametrixApiUrl: z.string(), // Base URL for the Parametrix Python API (e.g., "http://localhost:8000")
+	lookbackMonths: z.number().int().min(1).max(12), // Months to look back for weather data
 	evms: z.array(
 		z.object({
 			policyManagerAddress: z.string(),
@@ -45,15 +45,23 @@ type Config = z.infer<typeof configSchema>
 // ==============================================================================
 
 // Hazard types (matches smart contract uint8 values)
-// Default types: 0=Heatwave, 1=Flood, 2=Drought
-// Additional types can be added dynamically via smart contract
 type HazardType = number
+
+// Mapping from on-chain hazard IDs to Python API hazard names
+const HAZARD_ID_TO_NAME: Record<number, string> = {
+	0: 'heatwave',
+	1: 'flood',
+	2: 'drought',
+}
 
 interface Policy {
 	id: number
 	hazard: HazardType
+	hazardName: string
 	start: number
 	end: number
+	lat: number // decimal degrees (decoded from int32 / 10000)
+	lon: number // decimal degrees (decoded from int32 / 10000)
 	maxCoverage: bigint
 	premium: bigint
 	triggerThreshold: number
@@ -61,49 +69,58 @@ interface Policy {
 	holder: Address
 }
 
-interface WeatherData {
-	temperature: number // in Celsius
-	precipitation: number // in mm
-	timestamp: number
+// Consensus-compatible result from the Parametrix API.
+// All fields are numeric so the DON nodes can aggregate via median.
+interface TriggerCheckResult {
+	triggered: number // 1 = triggered, 0 = not triggered
+	value: number // observed weather value
+	threshold: number // trigger threshold echoed back
 }
 
 // ==============================================================================
 // UTILITY FUNCTIONS
 // ==============================================================================
 
-const safeJsonStringify = (obj: any): string =>
-	JSON.stringify(obj, (_, value) => (typeof value === 'bigint' ? value.toString() : value), 2)
-
 /**
- * Fetch weather data from external API
- * In production, this would fetch from multiple sources for consensus
+ * Creates a fetcher function for a specific policy.
+ * The returned function matches the CRE SDK HTTPSendRequester callback signature:
+ *   (sendRequester, config) => TriggerCheckResult
+ *
+ * Each DON node calls POST /check-event on the Parametrix Python API,
+ * then the CRE consensus layer aggregates the numeric results via median.
  */
-const fetchWeatherDataForPolicy = (
-	sendRequester: HTTPSendRequester,
-	config: Config,
-): WeatherData => {
-	// Example: Using OpenWeatherMap or similar API
-	// In production, you'd fetch from multiple APIs and aggregate
-	const location = 'default_location' // Would come from policy metadata
-	const url = `${config.weatherApiUrl}?location=${location}&apiKey=${config.weatherApiKey}`
+const createPolicyFetcher = (policy: Policy) =>
+	(sendRequester: HTTPSendRequester, config: Config): TriggerCheckResult => {
+		const url = `${config.parametrixApiUrl}/check-event`
 
-	const response = sendRequester.sendRequest({ method: 'GET', url }).result()
+		const body = JSON.stringify({
+			lat: policy.lat,
+			lon: policy.lon,
+			hazard: policy.hazardName,
+			threshold: policy.triggerThreshold,
+			payout: Number(policy.maxCoverage),
+			lookback_months: config.lookbackMonths,
+		})
 
-	if (response.statusCode !== 200) {
-		throw new Error(`Weather API request failed with status: ${response.statusCode}`)
+		const response = sendRequester.sendRequest({
+			method: 'POST',
+			url,
+			body,
+		}).result()
+
+		if (response.statusCode !== 200) {
+			throw new Error(`Parametrix API request failed with status: ${response.statusCode}`)
+		}
+
+		const responseText = Buffer.from(response.body).toString('utf-8')
+		const parsed = JSON.parse(responseText)
+
+		return {
+			triggered: parsed.triggered ? 1 : 0,
+			value: Number(parsed.value ?? 0),
+			threshold: Number(parsed.threshold ?? policy.triggerThreshold),
+		}
 	}
-
-	const responseText = Buffer.from(response.body).toString('utf-8')
-	const weatherResp = JSON.parse(responseText)
-
-	// Parse weather data (format depends on your API)
-	// This is an example structure
-	return {
-		temperature: weatherResp.temp || weatherResp.temperature || 0,
-		precipitation: weatherResp.precipitation || weatherResp.rain || 0,
-		timestamp: Date.now(),
-	}
-}
 
 /**
  * Get active policies from the contract
@@ -147,7 +164,7 @@ const getActivePolicies = (runtime: Runtime<Config>): Policy[] => {
 
 	runtime.log(`Next policy ID: ${nextId.toString()}`)
 
-	// Fetch all policies (in production, you'd want to optimize this)
+	// Fetch all policies
 	const policies: Policy[] = []
 	const currentTime = Math.floor(Date.now() / 1000)
 
@@ -201,15 +218,27 @@ const getActivePolicies = (runtime: Runtime<Config>): Policy[] => {
 				data: bytesToHex(holderResponse.data),
 			})
 
-			// Check if policy is active (not paid, not expired)
-			const [hazard, start, end, maxCoverage, premium, triggerThreshold, paid] = policyData
+			// Destructure policy data: hazard, start, end, lat, lon, maxCoverage, premium, triggerThreshold, paid
+			const [hazard, start, end, lat, lon, maxCoverage, premium, triggerThreshold, paid] = policyData
 
+			// Check if policy is active (not paid, not expired)
 			if (!paid && Number(end) > currentTime) {
+				const hazardNum = Number(hazard)
+				const hazardName = HAZARD_ID_TO_NAME[hazardNum]
+
+				if (!hazardName) {
+					runtime.log(`Policy ${id}: Unknown hazard type ${hazardNum} - skipping`)
+					continue
+				}
+
 				policies.push({
 					id,
-					hazard: Number(hazard),
+					hazard: hazardNum,
+					hazardName,
 					start: Number(start),
 					end: Number(end),
+					lat: Number(lat) / 10000, // Convert from int32 × 10000 to decimal degrees
+					lon: Number(lon) / 10000,
 					maxCoverage,
 					premium,
 					triggerThreshold: Number(triggerThreshold),
@@ -219,73 +248,10 @@ const getActivePolicies = (runtime: Runtime<Config>): Policy[] => {
 			}
 		} catch (error) {
 			runtime.log(`Error fetching policy ${id}: ${error}`)
-			// Skip this policy and continue
 		}
 	}
 
 	return policies
-}
-
-/**
- * Check if a policy trigger condition is met
- * Hazard types: 0=Heatwave, 1=Flood, 2=Drought (+ any custom hazards added)
- */
-const checkPolicyTrigger = (
-	runtime: Runtime<Config>,
-	policy: Policy,
-	weatherData: WeatherData,
-): { triggered: boolean; observedValue: number; payoutAmount: bigint } => {
-	let triggered = false
-	let observedValue = 0
-	let payoutAmount = 0n
-
-	// Get hazard name for logging
-	const hazardNames: Record<number, string> = {
-		0: 'Heatwave',
-		1: 'Flood',
-		2: 'Drought',
-	}
-	const hazardName = hazardNames[policy.hazard] || `Hazard-${policy.hazard}`
-
-	switch (policy.hazard) {
-		case 0: // Heatwave
-			observedValue = weatherData.temperature
-			if (weatherData.temperature >= policy.triggerThreshold) {
-				triggered = true
-				// Calculate payout based on how much threshold was exceeded
-				// Simple example: full payout if threshold exceeded
-				payoutAmount = policy.maxCoverage
-			}
-			break
-
-		case 1: // Flood
-			observedValue = weatherData.precipitation
-			if (weatherData.precipitation >= policy.triggerThreshold) {
-				triggered = true
-				payoutAmount = policy.maxCoverage
-			}
-			break
-
-		case 2: // Drought
-			observedValue = weatherData.precipitation
-			if (weatherData.precipitation <= policy.triggerThreshold) {
-				triggered = true
-				payoutAmount = policy.maxCoverage
-			}
-			break
-
-		default:
-			// For custom hazard types added dynamically, implement generic logic
-			// or extend this switch statement
-			runtime.log(`Warning: Unknown hazard type ${policy.hazard} - skipping trigger check`)
-			break
-	}
-
-	runtime.log(
-		`Policy ${policy.id}: Hazard=${hazardName}, Threshold=${policy.triggerThreshold}, Observed=${observedValue}, Triggered=${triggered}`,
-	)
-
-	return { triggered, observedValue, payoutAmount }
 }
 
 /**
@@ -355,12 +321,12 @@ const triggerPayout = (
 }
 
 /**
- * Main policy checking logic
+ * Main policy checking logic — calls the Parametrix Python API for each active policy
  */
 const checkPoliciesAndTriggerPayouts = (runtime: Runtime<Config>): string => {
 	runtime.log('Starting policy check...')
 
-	// Get all active policies
+	// Get all active policies from the smart contract
 	const activePolicies = getActivePolicies(runtime)
 	runtime.log(`Found ${activePolicies.length} active policies`)
 
@@ -368,43 +334,50 @@ const checkPoliciesAndTriggerPayouts = (runtime: Runtime<Config>): string => {
 		return 'No active policies to check'
 	}
 
-	// For each active policy, check if trigger conditions are met
 	const httpCapability = new HTTPClient()
-
 	let triggeredCount = 0
 
 	for (const policy of activePolicies) {
 		try {
-			// Fetch weather data with DON consensus
-			const weatherData = httpCapability
+			runtime.log(
+				`Checking policy ${policy.id}: hazard=${policy.hazardName}, ` +
+				`location=(${policy.lat}, ${policy.lon}), threshold=${policy.triggerThreshold}`,
+			)
+
+			// Call Parametrix Python API /check-event via DON consensus.
+			// Each node calls the API independently; results are aggregated via median.
+			const result = httpCapability
 				.sendRequest(
 					runtime,
-					fetchWeatherDataForPolicy,
-					ConsensusAggregationByFields<WeatherData>({
-						temperature: median,
-						precipitation: median,
-						timestamp: median,
+					createPolicyFetcher(policy),
+					ConsensusAggregationByFields<TriggerCheckResult>({
+						triggered: median,
+						value: median,
+						threshold: median,
 					}),
 				)(runtime.config)
 				.result()
 
-			runtime.log(`Weather data: ${safeJsonStringify(weatherData)}`)
+			const isTriggered = result.triggered >= 1
 
-			// Check if policy trigger conditions are met
-			const { triggered, observedValue, payoutAmount } = checkPolicyTrigger(
-				runtime,
-				policy,
-				weatherData,
+			runtime.log(
+				`Policy ${policy.id}: triggered=${isTriggered}, ` +
+				`value=${result.value}, threshold=${result.threshold}`,
 			)
 
-			if (triggered) {
-				runtime.log(`Policy ${policy.id} triggered! Initiating payout...`)
-				triggerPayout(runtime, policy.id, observedValue, payoutAmount)
+			if (isTriggered) {
+				runtime.log(
+					`Policy ${policy.id} TRIGGERED! Observed ${result.value} ` +
+					`(threshold: ${policy.triggerThreshold}). Initiating payout...`,
+				)
+
+				// Use maxCoverage as the payout amount (pro-rata is handled on-chain)
+				const observedValueInt = Math.round(result.value)
+				triggerPayout(runtime, policy.id, observedValueInt, policy.maxCoverage)
 				triggeredCount++
 			}
 		} catch (error) {
 			runtime.log(`Error processing policy ${policy.id}: ${error}`)
-			// Continue with next policy
 		}
 	}
 
@@ -416,7 +389,7 @@ const checkPoliciesAndTriggerPayouts = (runtime: Runtime<Config>): string => {
 // ==============================================================================
 
 /**
- * Cron trigger handler - periodically checks all active policies
+ * Cron trigger handler — periodically checks all active policies
  */
 const onCronTrigger = (runtime: Runtime<Config>, payload: CronPayload): string => {
 	if (!payload.scheduledExecutionTime) {
@@ -429,7 +402,7 @@ const onCronTrigger = (runtime: Runtime<Config>, payload: CronPayload): string =
 }
 
 /**
- * Log trigger handler - responds to PolicyPurchased events
+ * Log trigger handler — responds to PolicyPurchased events
  */
 const onLogTrigger = (runtime: Runtime<Config>, payload: EVMLog): string => {
 	runtime.log('Running LogTrigger - New policy purchased')
@@ -444,9 +417,6 @@ const onLogTrigger = (runtime: Runtime<Config>, payload: EVMLog): string => {
 	// Extract policy ID from topics[1] (first indexed parameter)
 	const policyId = BigInt(bytesToHex(topics[1]))
 	runtime.log(`New policy purchased with ID: ${policyId.toString()}`)
-
-	// Optionally, you could immediately check this new policy
-	// For now, we'll let the cron job handle it
 
 	return `Policy ${policyId.toString()} registered, will be monitored by cron job`
 }
@@ -483,8 +453,6 @@ const initWorkflow = (config: Config) => {
 		handler(
 			evmClient.logTrigger({
 				addresses: [config.evms[0].policyManagerAddress],
-				// Topic[0] is the event signature hash for PolicyPurchased
-				// This will automatically filter for PolicyPurchased events
 			}),
 			onLogTrigger,
 		),

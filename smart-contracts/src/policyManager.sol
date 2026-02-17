@@ -32,7 +32,9 @@ contract policyManager is ERC1155, Ownable {
         uint256 start,
         uint256 end,
         uint256 maxCoverage,
-        uint256 triggerThreshold
+        uint256 triggerThreshold,
+        int32 lat,
+        int32 lon
     );
 
     event PayoutTriggered(
@@ -52,6 +54,8 @@ contract policyManager is ERC1155, Ownable {
         uint8 hazard;
         uint40 start;
         uint40 end;
+        int32 lat;          // latitude × 10 000  (e.g. 39.5157° → 395157)
+        int32 lon;          // longitude × 10 000  (e.g. -119.4713° → -1194713)
         uint256 maxCoverage;
         uint256 premium;
         uint256 triggerThreshold;
@@ -64,6 +68,8 @@ contract policyManager is ERC1155, Ownable {
         uint256 maxCoverage;
         uint256 premium;
         uint256 triggerThreshold;
+        int32 lat;
+        int32 lon;
     }
 
     uint256 public nextId = 1;
@@ -135,7 +141,9 @@ contract policyManager is ERC1155, Ownable {
         uint256 maxCoverage,
         uint256 premium,
         uint256 triggerThreshold,
-        address receiver
+        address receiver,
+        int32 lat,
+        int32 lon
     ) external returns (uint256 id) {
         require(validHazards[hazard], "invalid hazard type");
 
@@ -145,6 +153,8 @@ contract policyManager is ERC1155, Ownable {
             hazard: hazard,
             start: uint40(block.timestamp),
             end: uint40(block.timestamp + durationDays * 1 days),
+            lat: lat,
+            lon: lon,
             maxCoverage: maxCoverage,
             premium: premium,
             triggerThreshold: triggerThreshold,
@@ -171,7 +181,9 @@ contract policyManager is ERC1155, Ownable {
             block.timestamp,
             block.timestamp + durationDays * 1 days,
             maxCoverage,
-            triggerThreshold
+            triggerThreshold,
+            lat,
+            lon
         );
     }
 
@@ -201,6 +213,8 @@ contract policyManager is ERC1155, Ownable {
                 hazard: in_.hazard,
                 start: uint40(block.timestamp),
                 end: uint40(block.timestamp + in_.durationDays * 1 days),
+                lat: in_.lat,
+                lon: in_.lon,
                 maxCoverage: in_.maxCoverage,
                 premium: in_.premium,
                 triggerThreshold: in_.triggerThreshold,
@@ -221,7 +235,9 @@ contract policyManager is ERC1155, Ownable {
                 block.timestamp,
                 block.timestamp + in_.durationDays * 1 days,
                 in_.maxCoverage,
-                in_.triggerThreshold
+                in_.triggerThreshold,
+                in_.lat,
+                in_.lon
             );
         }
     }

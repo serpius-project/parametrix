@@ -34,6 +34,8 @@ contract BuyPolicyScript is Script {
     uint256 constant MAX_COVERAGE_USDC  = 1000;  // Max payout in whole USDC ($1,000)
     uint256 constant PREMIUM_USDC       = 50;    // Premium in whole USDC ($50)
     uint256 constant TRIGGER_THRESHOLD  = 35;    // e.g. 35°C for heatwave
+    int32   constant LAT                = 395157;   // 39.5157° (Tahoe Reno, NV) × 10 000
+    int32   constant LON                = -1194713;  // -119.4713° × 10 000
 
     // ── Internal ─────────────────────────────────────────────────────────────
     string[3] private HAZARD_NAMES = ["Heatwave", "Flood", "Drought"];
@@ -79,7 +81,9 @@ contract BuyPolicyScript is Script {
             maxCoverage,
             premium,
             TRIGGER_THRESHOLD,
-            user
+            user,
+            LAT,
+            LON
         );
 
         vm.stopBroadcast();
@@ -91,6 +95,8 @@ contract BuyPolicyScript is Script {
             uint8  storedHazard,
             uint40 start,
             uint40 end,
+            ,  // lat
+            ,  // lon
             uint256 storedMaxCoverage,
             uint256 storedPremium,
             uint256 storedThreshold,

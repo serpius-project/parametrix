@@ -1,10 +1,10 @@
 {
   "schedule": "*/2 * * * *",
-  "weatherApiKey": "YOUR_WEATHER_API_KEY",
-  "weatherApiUrl": "https://api.openweathermap.org/data/2.5/weather",
+  "parametrixApiUrl": "http://localhost:8000",
+  "lookbackMonths": 3,
   "evms": [
     {
-      "policyManagerAddress": "YOUR_DEPLOYED_POLICY_MANAGER_ADDRESS",
+      "policyManagerAddress": "0x29FbE48c63B2877C155F45E7CA176F3e664aE672",
       "chainSelectorName": "ethereum-testnet-sepolia",
       "rpcUrl": "https://virtual.rpc.tenderly.co/mmendozaj/wedefin/private/gst/fb4d9fa7-c717-4600-b54e-cb7d27dd79b1",
       "gasLimit": "1000000"

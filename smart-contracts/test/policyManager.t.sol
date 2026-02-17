@@ -32,6 +32,10 @@ contract PolicyManagerTest is Test {
     uint256 constant VAULT_CAP = 10_000_000 * 10**18;
     uint256 constant UNDERWRITER_DEPOSIT = 1_000_000 * 10**18;
 
+    // Tahoe Reno, NV (The Citadel) — lat/lon × 10 000
+    int32 constant DEFAULT_LAT = 395157;
+    int32 constant DEFAULT_LON = -1194713;
+
     function setUp() public {
         oracle = address(this);
 
@@ -130,12 +134,14 @@ contract PolicyManagerTest is Test {
             maxCoverage,
             premium,
             6, // Magnitude 6.0 trigger
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
         vm.stopPrank();
 
         assertEq(policyId, 1, "First policy should be ID 1");
-        (uint8 hazard, , , , , , ) = manager.policies(policyId);
+        (uint8 hazard, , , , , , , , ) = manager.policies(policyId);
         assertEq(hazard, 3, "Policy should have Earthquake hazard");
     }
 
@@ -151,7 +157,9 @@ contract PolicyManagerTest is Test {
             10_000 * 10**18,
             premium,
             35,
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
         vm.stopPrank();
     }
@@ -171,7 +179,9 @@ contract PolicyManagerTest is Test {
             10_000 * 10**18,
             premium,
             35,
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
         vm.stopPrank();
     }
@@ -190,7 +200,9 @@ contract PolicyManagerTest is Test {
             maxCoverage,
             premium,
             35, // 35°C trigger threshold
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
         vm.stopPrank();
 
@@ -211,14 +223,18 @@ contract PolicyManagerTest is Test {
             durationDays: 30,
             maxCoverage: 10_000 * 10**18,
             premium: 1000 * 10**18,
-            triggerThreshold: 35
+            triggerThreshold: 35,
+            lat: DEFAULT_LAT,
+            lon: DEFAULT_LON
         });
         inputs[1] = policyManager.PolicyInput({
             hazard: 1,
             durationDays: 60,
             maxCoverage: 20_000 * 10**18,
             premium: 2000 * 10**18,
-            triggerThreshold: 100
+            triggerThreshold: 100,
+            lat: DEFAULT_LAT,
+            lon: DEFAULT_LON
         });
 
         uint256 totalPremium = 3000 * 10**18;
@@ -242,14 +258,7 @@ contract PolicyManagerTest is Test {
 
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
-        manager.buyPolicy(
-            0,
-            30,
-            10_000 * 10**18,
-            1000 * 10**18,
-            35,
-            alice
-        );
+        manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
         uint256 vaultBalanceAfter = vault.balanceOf(address(manager));
@@ -271,7 +280,9 @@ contract PolicyManagerTest is Test {
             maxCoverage,
             premium,
             35,
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
         vm.stopPrank();
 
@@ -287,7 +298,7 @@ contract PolicyManagerTest is Test {
         assertEq(aliceBalanceAfter - aliceBalanceBefore, requestedPayout, "Alice should receive full payout");
 
         // Check policy is marked as paid
-        (, , , , , , bool paid) = manager.policies(policyId);
+        (, , , , , , , , bool paid) = manager.policies(policyId);
         assertTrue(paid, "Policy should be marked as paid");
 
         // Check shares were unreserved
@@ -332,12 +343,12 @@ contract PolicyManagerTest is Test {
 
         vm.startPrank(alice);
         asset.approve(address(freshManager), alicePremium);
-        uint256 policyA = freshManager.buyPolicy(0, 30, aliceCoverage, alicePremium, 35, alice);
+        uint256 policyA = freshManager.buyPolicy(0, 30, aliceCoverage, alicePremium, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
         vm.startPrank(bob);
         asset.approve(address(freshManager), bobPremium);
-        uint256 policyB = freshManager.buyPolicy(0, 30, bobCoverage, bobPremium, 35, bob);
+        uint256 policyB = freshManager.buyPolicy(0, 30, bobCoverage, bobPremium, 35, bob, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
         assertEq(freshVault.totalAssets(), totalPremiums, "Vault should only hold premiums");
@@ -379,7 +390,9 @@ contract PolicyManagerTest is Test {
             10_000 * 10**18,
             1000 * 10**18,
             35,
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
         vm.stopPrank();
 
@@ -397,7 +410,9 @@ contract PolicyManagerTest is Test {
             10_000 * 10**18,
             1000 * 10**18,
             35,
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
         vm.stopPrank();
 
@@ -418,7 +433,9 @@ contract PolicyManagerTest is Test {
             10_000 * 10**18,
             1000 * 10**18,
             35,
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
         vm.stopPrank();
 
@@ -438,7 +455,9 @@ contract PolicyManagerTest is Test {
             10_000 * 10**18,
             1000 * 10**18,
             35,
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
         vm.stopPrank();
 
@@ -455,7 +474,9 @@ contract PolicyManagerTest is Test {
             10_000 * 10**18,
             1000 * 10**18,
             35,
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
         vm.stopPrank();
 
@@ -474,7 +495,9 @@ contract PolicyManagerTest is Test {
             10_000 * 10**18,
             1000 * 10**18,
             35,
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
         vm.stopPrank();
 
@@ -492,7 +515,7 @@ contract PolicyManagerTest is Test {
         assertEq(vault.totalReservedShares(), 0, "No shares should be reserved");
 
         // Check policy is marked as paid (to prevent future claims)
-        (, , , , , , bool paid) = manager.policies(policyId);
+        (, , , , , , , , bool paid) = manager.policies(policyId);
         assertTrue(paid, "Policy should be marked as paid");
     }
 
@@ -505,7 +528,9 @@ contract PolicyManagerTest is Test {
             10_000 * 10**18,
             1000 * 10**18,
             35,
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
         vm.stopPrank();
 
@@ -526,7 +551,9 @@ contract PolicyManagerTest is Test {
                 10_000 * 10**18,
                 1000 * 10**18,
                 35,
-                alice
+                alice,
+                DEFAULT_LAT,
+                DEFAULT_LON
             );
         }
         vm.stopPrank();
@@ -555,7 +582,9 @@ contract PolicyManagerTest is Test {
             10_000 * 10**18,
             1000 * 10**18,
             35,
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
 
         // Transfer to Bob
@@ -576,7 +605,9 @@ contract PolicyManagerTest is Test {
             10_000 * 10**18,
             1000 * 10**18,
             35,
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
 
         // Transfer to Bob
@@ -615,7 +646,9 @@ contract PolicyManagerTest is Test {
             maxCoverage,
             premium,
             35,
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
         vm.stopPrank();
 
@@ -642,7 +675,9 @@ contract PolicyManagerTest is Test {
             maxCoverage,
             premium,
             35,
-            alice
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
         );
         vm.stopPrank();
 
@@ -677,7 +712,9 @@ contract PolicyManagerTest is Test {
                     10_000 * 10**18,
                     1000 * 10**18,
                     35,
-                    user
+                    user,
+                    DEFAULT_LAT,
+                    DEFAULT_LON
                 );
                 assertEq(manager.holderOf(policyId), user, "User should own policy");
             }
@@ -708,12 +745,12 @@ contract PolicyManagerTest is Test {
 
         vm.startPrank(alice);
         asset.approve(address(fm), pre1);
-        uint256 p1 = fm.buyPolicy(0, 30, cov1, pre1, 35, alice);
+        uint256 p1 = fm.buyPolicy(0, 30, cov1, pre1, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
         vm.startPrank(bob);
         asset.approve(address(fm), pre2);
-        uint256 p2 = fm.buyPolicy(0, 30, cov2, pre2, 35, bob);
+        uint256 p2 = fm.buyPolicy(0, 30, cov2, pre2, 35, bob, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
         uint256 totalAssets = fv.totalAssets(); // 120e18
@@ -748,12 +785,12 @@ contract PolicyManagerTest is Test {
 
         vm.startPrank(alice);
         asset.approve(address(manager), pre1);
-        uint256 p1 = manager.buyPolicy(0, 30, cov1, pre1, 35, alice);
+        uint256 p1 = manager.buyPolicy(0, 30, cov1, pre1, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
         vm.startPrank(bob);
         asset.approve(address(manager), pre2);
-        uint256 p2 = manager.buyPolicy(0, 30, cov2, pre2, 35, bob);
+        uint256 p2 = manager.buyPolicy(0, 30, cov2, pre2, 35, bob, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
         uint256 aliceBefore = asset.balanceOf(alice);
@@ -778,13 +815,13 @@ contract PolicyManagerTest is Test {
 
         vm.startPrank(alice);
         asset.approve(address(manager), pre);
-        uint256 p1 = manager.buyPolicy(0, 30, cov1, pre, 35, alice);
+        uint256 p1 = manager.buyPolicy(0, 30, cov1, pre, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
         assertEq(manager.totalActiveCoverage(), cov1, "After first purchase");
 
         vm.startPrank(bob);
         asset.approve(address(manager), pre);
-        uint256 p2 = manager.buyPolicy(0, 30, cov2, pre, 35, bob);
+        uint256 p2 = manager.buyPolicy(0, 30, cov2, pre, 35, bob, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
         assertEq(manager.totalActiveCoverage(), cov1 + cov2, "After second purchase");
 
@@ -808,7 +845,7 @@ contract PolicyManagerTest is Test {
 
         vm.startPrank(alice);
         asset.approve(address(fm), premium);
-        uint256 policyId = fm.buyPolicy(0, 30, coverage, premium, 35, alice);
+        uint256 policyId = fm.buyPolicy(0, 30, coverage, premium, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
         assertEq(policyId, 1, "Policy created successfully");
@@ -845,7 +882,7 @@ contract PolicyManagerTest is Test {
             asset.mint(users[i], premium);
             vm.startPrank(users[i]);
             asset.approve(address(fm), premium);
-            policyIds[i] = fm.buyPolicy(0, 30, coverages[i], premium, 35, users[i]);
+            policyIds[i] = fm.buyPolicy(0, 30, coverages[i], premium, 35, users[i], DEFAULT_LAT, DEFAULT_LON);
             vm.stopPrank();
         }
 

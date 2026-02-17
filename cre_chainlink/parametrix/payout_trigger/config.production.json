@@ -1,7 +1,7 @@
 {
   "schedule": "*/5 * * * *",
-  "weatherApiKey": "YOUR_WEATHER_API_KEY",
-  "weatherApiUrl": "https://api.openweathermap.org/data/2.5/weather",
+  "parametrixApiUrl": "https://api.parametrix.io",
+  "lookbackMonths": 3,
   "evms": [
     {
       "policyManagerAddress": "YOUR_DEPLOYED_POLICY_MANAGER_ADDRESS",
