@@ -1,6 +1,5 @@
 {
   "schedule": "*/5 * * * *",
-  "parametrixApiUrl": "https://api.parametrix.io",
   "lookbackMonths": 3,
   "evms": [
     {

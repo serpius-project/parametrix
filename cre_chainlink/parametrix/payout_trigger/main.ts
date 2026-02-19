@@ -27,8 +27,7 @@ import { PolicyManager } from '../contracts/abi'
 
 const configSchema = z.object({
 	schedule: z.string(), // Cron schedule for checking policies (e.g., "*/5 * * * *")
-	parametrixApiUrl: z.string(), // Base URL for the Parametrix Python API (e.g., "http://localhost:8000")
-	lookbackMonths: z.number().int().min(1).max(12), // Months to look back for weather data
+	lookbackMonths: z.number().int().min(1).max(24), // Months to look back for weather data (min 14 for drought)
 	evms: z.array(
 		z.object({
 			policyManagerAddress: z.string(),
@@ -47,11 +46,38 @@ type Config = z.infer<typeof configSchema>
 // Hazard types (matches smart contract uint8 values)
 type HazardType = number
 
-// Mapping from on-chain hazard IDs to Python API hazard names
+// Mapping from on-chain hazard IDs to hazard names
 const HAZARD_ID_TO_NAME: Record<number, string> = {
 	0: 'heatwave',
 	1: 'flood',
 	2: 'drought',
+}
+
+// Open-Meteo API configuration per hazard type
+// Source: backend-python/lib/fetcher.py HAZARD_API_CONFIG
+interface HazardApiConfig {
+	url: string
+	dailyVars: string
+	aggregation: 'max' | 'mean' | 'thornthwaite'
+	extraParams?: Record<string, string>
+}
+
+const HAZARD_API_CONFIG: Record<string, HazardApiConfig> = {
+	heatwave: {
+		url: 'https://archive-api.open-meteo.com/v1/archive',
+		dailyVars: 'wet_bulb_temperature_2m_max',
+		aggregation: 'max',
+	},
+	flood: {
+		url: 'https://flood-api.open-meteo.com/v1/flood',
+		dailyVars: 'river_discharge',
+		aggregation: 'max',
+	},
+	drought: {
+		url: 'https://archive-api.open-meteo.com/v1/archive',
+		dailyVars: 'temperature_2m_mean,precipitation_sum',
+		aggregation: 'thornthwaite',
+	},
 }
 
 interface Policy {
@@ -69,7 +95,7 @@ interface Policy {
 	holder: Address
 }
 
-// Consensus-compatible result from the Parametrix API.
+// Consensus-compatible result from Open-Meteo weather data.
 // All fields are numeric so the DON nodes can aggregate via median.
 interface TriggerCheckResult {
 	triggered: number // 1 = triggered, 0 = not triggered
@@ -78,51 +104,245 @@ interface TriggerCheckResult {
 }
 
 // ==============================================================================
-// UTILITY FUNCTIONS
+// WEATHER DATA FUNCTIONS (replaces Python API dependency)
 // ==============================================================================
 
 /**
- * Creates a fetcher function for a specific policy.
- * The returned function matches the CRE SDK HTTPSendRequester callback signature:
- *   (sendRequester, config) => TriggerCheckResult
- *
- * Each DON node calls POST /check-event on the Parametrix Python API,
- * then the CRE consensus layer aggregates the numeric results via median.
+ * Aggregate daily values to monthly using the specified method.
+ * Groups by YYYY-MM key and applies max or mean aggregation.
+ * Source: backend-python/lib/fetcher.py aggregate_monthly()
  */
-const createPolicyFetcher = (policy: Policy) =>
+const aggregateMonthly = (
+	dates: string[],
+	values: (number | null)[],
+	method: 'max' | 'mean',
+): { date: string; value: number }[] => {
+	const monthly: Record<string, number[]> = {}
+
+	for (let i = 0; i < dates.length; i++) {
+		const v = values[i]
+		if (v === null || v === undefined) continue
+		const monthKey = dates[i].slice(0, 7) + '-01' // YYYY-MM-01
+		if (!monthly[monthKey]) monthly[monthKey] = []
+		monthly[monthKey].push(v)
+	}
+
+	const result: { date: string; value: number }[] = []
+	for (const monthKey of Object.keys(monthly).sort()) {
+		const vals = monthly[monthKey]
+		if (!vals.length) continue
+
+		let agg: number
+		if (method === 'max') {
+			agg = Math.max(...vals)
+		} else {
+			agg = vals.reduce((a, b) => a + b, 0) / vals.length
+		}
+		result.push({ date: monthKey, value: agg })
+	}
+
+	return result
+}
+
+/**
+ * Compute monthly water deficit D_mm = precip - PET using Thornthwaite method.
+ * Used exclusively for drought hazard evaluation.
+ * Source: backend-python/lib/fetcher.py compute_thornthwaite_deficit()
+ *
+ * Steps:
+ *   1. Aggregate daily data to monthly (mean temp, sum precip)
+ *   2. Heat index per month: I_i = (max(T, 0) / 5)^1.514
+ *   3. Annual heat index: 12-month rolling sum
+ *   4. Exponent: a = 6.75e-7 * I_a³ - 7.71e-5 * I_a² + 1.79e-2 * I_a + 0.492
+ *   5. PET (mm/month): 16.0 * (10 * T / I_a)^a
+ *   6. Deficit: D = precip - PET (negative = drought)
+ */
+const computeThornthwaiteDeficit = (
+	dates: string[],
+	temps: (number | null)[],
+	precips: (number | null)[],
+): { date: string; value: number }[] => {
+	// Group daily data by month: mean temp, sum precip
+	const monthlyData: Record<string, { temps: number[]; precips: number[] }> = {}
+
+	for (let i = 0; i < dates.length; i++) {
+		const t = temps[i]
+		const p = precips[i]
+		if (t === null || t === undefined || p === null || p === undefined) continue
+		const monthKey = dates[i].slice(0, 7) + '-01'
+		if (!monthlyData[monthKey]) monthlyData[monthKey] = { temps: [], precips: [] }
+		monthlyData[monthKey].temps.push(t)
+		monthlyData[monthKey].precips.push(p)
+	}
+
+	const sortedMonths = Object.keys(monthlyData).sort()
+	if (sortedMonths.length < 2) return []
+
+	// Monthly aggregates
+	const monthlyTemps: number[] = []
+	const monthlyPrecips: number[] = []
+	for (const m of sortedMonths) {
+		const d = monthlyData[m]
+		monthlyTemps.push(d.temps.reduce((a, b) => a + b, 0) / d.temps.length) // mean
+		monthlyPrecips.push(d.precips.reduce((a, b) => a + b, 0)) // sum
+	}
+
+	// Step 1: Monthly heat index I_i = (max(T, 0) / 5)^1.514
+	const heatIndices = monthlyTemps.map((t) => Math.pow(Math.max(t, 0) / 5.0, 1.514))
+
+	// Step 2: Annual heat index — 12-month rolling sum (or sum of all available if < 12)
+	const annualI: number[] = []
+	for (let i = 0; i < heatIndices.length; i++) {
+		const windowStart = Math.max(0, i - 5) // center ≈ 6 before, 5 after
+		const windowEnd = Math.min(heatIndices.length, i + 7)
+		let sum = 0
+		let count = 0
+		for (let j = windowStart; j < windowEnd; j++) {
+			sum += heatIndices[j]
+			count++
+		}
+		// Scale to 12 months if window is smaller
+		annualI.push(count > 0 ? (sum / count) * 12 : 0)
+	}
+
+	// Step 3: Compute PET and deficit for each month
+	const result: { date: string; value: number }[] = []
+	for (let i = 0; i < sortedMonths.length; i++) {
+		const Ia = annualI[i] || 1 // avoid division by zero
+		const T = Math.max(monthlyTemps[i], 0)
+
+		// Exponent a
+		const a = 6.75e-7 * Math.pow(Ia, 3) - 7.71e-5 * Math.pow(Ia, 2) + 1.79e-2 * Ia + 0.492
+
+		// PET in mm/month
+		const pet = Ia > 0 ? 16.0 * Math.pow((10.0 * T) / Ia, a) : 0
+
+		// Water deficit: precip - PET (negative = drought condition)
+		const deficit = monthlyPrecips[i] - pet
+
+		result.push({ date: sortedMonths[i], value: deficit })
+	}
+
+	return result
+}
+
+/**
+ * Evaluate whether an observed value triggers a payout.
+ * Source: backend-python/lib/fetcher.py evaluate_trigger()
+ *
+ * - heatwave, flood: HIGH_IS_BAD → triggered if value > threshold
+ * - drought: LOW_IS_BAD → triggered if value < threshold
+ */
+const evaluateTrigger = (value: number, threshold: number, hazard: string): boolean => {
+	if (hazard === 'flood' || hazard === 'heatwave') {
+		return value > threshold
+	}
+	// drought: low deficit (more negative) means worse drought
+	return value < threshold
+}
+
+/**
+ * Build the Open-Meteo query URL for a policy's hazard and location.
+ */
+const buildOpenMeteoUrl = (policy: Policy, lookbackMonths: number): string => {
+	const cfg = HAZARD_API_CONFIG[policy.hazardName]
+	if (!cfg) throw new Error(`No API config for hazard: ${policy.hazardName}`)
+
+	// For drought: force minimum 14 months lookback (needed for Thornthwaite)
+	const effectiveLookback = policy.hazardName === 'drought'
+		? Math.max(lookbackMonths, 14)
+		: lookbackMonths
+
+	const now = new Date()
+	const startDate = new Date(now.getTime() - effectiveLookback * 31 * 24 * 60 * 60 * 1000)
+	startDate.setDate(1) // first of month
+
+	const formatDate = (d: Date) => d.toISOString().slice(0, 10) // YYYY-MM-DD
+
+	const parts = [
+		`latitude=${policy.lat}`,
+		`longitude=${policy.lon}`,
+		`daily=${cfg.dailyVars}`,
+		`start_date=${formatDate(startDate)}`,
+		`end_date=${formatDate(now)}`,
+		`timezone=UTC`,
+	]
+
+	// Add extra params (e.g., models=era5_land for waterstress)
+	if (cfg.extraParams) {
+		for (const k of Object.keys(cfg.extraParams)) {
+			parts.push(`${k}=${cfg.extraParams[k]}`)
+		}
+	}
+
+	return `${cfg.url}?${parts.join('&')}`
+}
+
+/**
+ * Creates a weather fetcher for a specific policy.
+ * Each DON node calls Open-Meteo directly (GET request, no auth needed),
+ * aggregates daily data to monthly, evaluates the trigger, and returns
+ * a numeric result for DON consensus via median.
+ */
+const createWeatherFetcher = (policy: Policy) =>
 	(sendRequester: HTTPSendRequester, config: Config): TriggerCheckResult => {
-		const url = `${config.parametrixApiUrl}/check-event`
+		const cfg = HAZARD_API_CONFIG[policy.hazardName]
+		if (!cfg) throw new Error(`No API config for hazard: ${policy.hazardName}`)
 
-		const bodyJson = JSON.stringify({
-			lat: policy.lat,
-			lon: policy.lon,
-			hazard: policy.hazardName,
-			threshold: policy.triggerThreshold,
-			payout: Number(policy.maxCoverage),
-			lookback_months: config.lookbackMonths,
-		})
-
-		// CRE SDK expects the body as base64-encoded bytes
-		const bodyBase64 = Buffer.from(bodyJson, 'utf-8').toString('base64')
+		const url = buildOpenMeteoUrl(policy, config.lookbackMonths)
 
 		const response = sendRequester.sendRequest({
-			method: 'POST',
+			method: 'GET',
 			url,
-			body: bodyBase64,
-			headers: { 'Content-Type': 'application/json' },
 		}).result()
 
 		if (response.statusCode !== 200) {
-			throw new Error(`Parametrix API request failed with status: ${response.statusCode}`)
+			throw new Error(`Open-Meteo API returned status ${response.statusCode}`)
 		}
 
 		const responseText = Buffer.from(response.body).toString('utf-8')
-		const parsed = JSON.parse(responseText)
+		const data = JSON.parse(responseText)
+
+		if (!data.daily || !data.daily.time) {
+			throw new Error('Open-Meteo response missing daily data')
+		}
+
+		const dates: string[] = data.daily.time
+		let observedValue: number
+
+		if (cfg.aggregation === 'thornthwaite') {
+			// Drought: Thornthwaite PET deficit
+			const temps = data.daily.temperature_2m_mean as (number | null)[]
+			const precips = data.daily.precipitation_sum as (number | null)[]
+			const monthly = computeThornthwaiteDeficit(dates, temps, precips)
+
+			if (monthly.length === 0) {
+				throw new Error('Insufficient data for Thornthwaite calculation')
+			}
+			observedValue = monthly[monthly.length - 1].value
+		} else {
+			// Heatwave / Flood: simple monthly aggregation
+			const varName = cfg.dailyVars.split(',')[0]
+			const values = data.daily[varName] as (number | null)[]
+
+			if (!values) {
+				throw new Error(`Open-Meteo response missing variable: ${varName}`)
+			}
+
+			const monthly = aggregateMonthly(dates, values, cfg.aggregation)
+
+			if (monthly.length === 0) {
+				throw new Error('No monthly data after aggregation')
+			}
+			observedValue = monthly[monthly.length - 1].value
+		}
+
+		const triggered = evaluateTrigger(observedValue, policy.triggerThreshold, policy.hazardName)
 
 		return {
-			triggered: parsed.triggered ? 1 : 0,
-			value: Number(parsed.value ?? 0),
-			threshold: Number(parsed.threshold ?? policy.triggerThreshold),
+			triggered: triggered ? 1 : 0,
+			value: Math.round(observedValue * 10000) / 10000, // 4 decimal places
+			threshold: policy.triggerThreshold,
 		}
 	}
 
@@ -325,7 +545,7 @@ const triggerPayout = (
 }
 
 /**
- * Main policy checking logic — calls the Parametrix Python API for each active policy
+ * Main policy checking logic — fetches weather from Open-Meteo for each active policy
  */
 const checkPoliciesAndTriggerPayouts = (runtime: Runtime<Config>): string => {
 	runtime.log('Starting policy check...')
@@ -348,12 +568,12 @@ const checkPoliciesAndTriggerPayouts = (runtime: Runtime<Config>): string => {
 				`location=(${policy.lat}, ${policy.lon}), threshold=${policy.triggerThreshold}`,
 			)
 
-			// Call Parametrix Python API /check-event via DON consensus.
-			// Each node calls the API independently; results are aggregated via median.
+			// Fetch weather data from Open-Meteo via DON consensus.
+			// Each node calls the public API independently; results are aggregated via median.
 			const result = httpCapability
 				.sendRequest(
 					runtime,
-					createPolicyFetcher(policy),
+					createWeatherFetcher(policy),
 					ConsensusAggregationByFields<TriggerCheckResult>({
 						triggered: median,
 						value: median,

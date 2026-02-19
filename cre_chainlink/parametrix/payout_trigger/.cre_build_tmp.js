@@ -16263,8 +16263,7 @@ var PolicyManager = [
 ];
 var configSchema = exports_external.object({
   schedule: exports_external.string(),
-  parametrixApiUrl: exports_external.string(),
-  lookbackMonths: exports_external.number().int().min(1).max(12),
+  lookbackMonths: exports_external.number().int().min(1).max(24),
   evms: exports_external.array(exports_external.object({
     policyManagerAddress: exports_external.string(),
     chainSelectorName: exports_external.string(),
@@ -16276,32 +16275,170 @@ var HAZARD_ID_TO_NAME = {
   1: "flood",
   2: "drought"
 };
-var createPolicyFetcher = (policy) => (sendRequester, config) => {
-  const url = `${config.parametrixApiUrl}/check-event`;
-  const bodyJson = JSON.stringify({
-    lat: policy.lat,
-    lon: policy.lon,
-    hazard: policy.hazardName,
-    threshold: policy.triggerThreshold,
-    payout: Number(policy.maxCoverage),
-    lookback_months: config.lookbackMonths
-  });
-  const bodyBase64 = Buffer.from(bodyJson, "utf-8").toString("base64");
+var HAZARD_API_CONFIG = {
+  heatwave: {
+    url: "https://archive-api.open-meteo.com/v1/archive",
+    dailyVars: "wet_bulb_temperature_2m_max",
+    aggregation: "max"
+  },
+  flood: {
+    url: "https://flood-api.open-meteo.com/v1/flood",
+    dailyVars: "river_discharge",
+    aggregation: "max"
+  },
+  drought: {
+    url: "https://archive-api.open-meteo.com/v1/archive",
+    dailyVars: "temperature_2m_mean,precipitation_sum",
+    aggregation: "thornthwaite"
+  }
+};
+var aggregateMonthly = (dates, values, method) => {
+  const monthly = {};
+  for (let i2 = 0;i2 < dates.length; i2++) {
+    const v = values[i2];
+    if (v === null || v === undefined)
+      continue;
+    const monthKey = dates[i2].slice(0, 7) + "-01";
+    if (!monthly[monthKey])
+      monthly[monthKey] = [];
+    monthly[monthKey].push(v);
+  }
+  const result = [];
+  for (const monthKey of Object.keys(monthly).sort()) {
+    const vals = monthly[monthKey];
+    if (!vals.length)
+      continue;
+    let agg;
+    if (method === "max") {
+      agg = Math.max(...vals);
+    } else {
+      agg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    }
+    result.push({ date: monthKey, value: agg });
+  }
+  return result;
+};
+var computeThornthwaiteDeficit = (dates, temps, precips) => {
+  const monthlyData = {};
+  for (let i2 = 0;i2 < dates.length; i2++) {
+    const t = temps[i2];
+    const p = precips[i2];
+    if (t === null || t === undefined || p === null || p === undefined)
+      continue;
+    const monthKey = dates[i2].slice(0, 7) + "-01";
+    if (!monthlyData[monthKey])
+      monthlyData[monthKey] = { temps: [], precips: [] };
+    monthlyData[monthKey].temps.push(t);
+    monthlyData[monthKey].precips.push(p);
+  }
+  const sortedMonths = Object.keys(monthlyData).sort();
+  if (sortedMonths.length < 2)
+    return [];
+  const monthlyTemps = [];
+  const monthlyPrecips = [];
+  for (const m of sortedMonths) {
+    const d = monthlyData[m];
+    monthlyTemps.push(d.temps.reduce((a, b) => a + b, 0) / d.temps.length);
+    monthlyPrecips.push(d.precips.reduce((a, b) => a + b, 0));
+  }
+  const heatIndices = monthlyTemps.map((t) => Math.pow(Math.max(t, 0) / 5, 1.514));
+  const annualI = [];
+  for (let i2 = 0;i2 < heatIndices.length; i2++) {
+    const windowStart = Math.max(0, i2 - 5);
+    const windowEnd = Math.min(heatIndices.length, i2 + 7);
+    let sum = 0;
+    let count = 0;
+    for (let j = windowStart;j < windowEnd; j++) {
+      sum += heatIndices[j];
+      count++;
+    }
+    annualI.push(count > 0 ? sum / count * 12 : 0);
+  }
+  const result = [];
+  for (let i2 = 0;i2 < sortedMonths.length; i2++) {
+    const Ia = annualI[i2] || 1;
+    const T = Math.max(monthlyTemps[i2], 0);
+    const a = 0.000000675 * Math.pow(Ia, 3) - 0.0000771 * Math.pow(Ia, 2) + 0.0179 * Ia + 0.492;
+    const pet = Ia > 0 ? 16 * Math.pow(10 * T / Ia, a) : 0;
+    const deficit = monthlyPrecips[i2] - pet;
+    result.push({ date: sortedMonths[i2], value: deficit });
+  }
+  return result;
+};
+var evaluateTrigger = (value2, threshold, hazard) => {
+  if (hazard === "flood" || hazard === "heatwave") {
+    return value2 > threshold;
+  }
+  return value2 < threshold;
+};
+var buildOpenMeteoUrl = (policy, lookbackMonths) => {
+  const cfg = HAZARD_API_CONFIG[policy.hazardName];
+  if (!cfg)
+    throw new Error(`No API config for hazard: ${policy.hazardName}`);
+  const effectiveLookback = policy.hazardName === "drought" ? Math.max(lookbackMonths, 14) : lookbackMonths;
+  const now = new Date;
+  const startDate = new Date(now.getTime() - effectiveLookback * 31 * 24 * 60 * 60 * 1000);
+  startDate.setDate(1);
+  const formatDate = (d) => d.toISOString().slice(0, 10);
+  const parts = [
+    `latitude=${policy.lat}`,
+    `longitude=${policy.lon}`,
+    `daily=${cfg.dailyVars}`,
+    `start_date=${formatDate(startDate)}`,
+    `end_date=${formatDate(now)}`,
+    `timezone=UTC`
+  ];
+  if (cfg.extraParams) {
+    for (const k of Object.keys(cfg.extraParams)) {
+      parts.push(`${k}=${cfg.extraParams[k]}`);
+    }
+  }
+  return `${cfg.url}?${parts.join("&")}`;
+};
+var createWeatherFetcher = (policy) => (sendRequester, config) => {
+  const cfg = HAZARD_API_CONFIG[policy.hazardName];
+  if (!cfg)
+    throw new Error(`No API config for hazard: ${policy.hazardName}`);
+  const url = buildOpenMeteoUrl(policy, config.lookbackMonths);
   const response = sendRequester.sendRequest({
-    method: "POST",
-    url,
-    body: bodyBase64,
-    headers: { "Content-Type": "application/json" }
+    method: "GET",
+    url
   }).result();
   if (response.statusCode !== 200) {
-    throw new Error(`Parametrix API request failed with status: ${response.statusCode}`);
+    throw new Error(`Open-Meteo API returned status ${response.statusCode}`);
   }
   const responseText = Buffer.from(response.body).toString("utf-8");
-  const parsed = JSON.parse(responseText);
+  const data = JSON.parse(responseText);
+  if (!data.daily || !data.daily.time) {
+    throw new Error("Open-Meteo response missing daily data");
+  }
+  const dates = data.daily.time;
+  let observedValue;
+  if (cfg.aggregation === "thornthwaite") {
+    const temps = data.daily.temperature_2m_mean;
+    const precips = data.daily.precipitation_sum;
+    const monthly = computeThornthwaiteDeficit(dates, temps, precips);
+    if (monthly.length === 0) {
+      throw new Error("Insufficient data for Thornthwaite calculation");
+    }
+    observedValue = monthly[monthly.length - 1].value;
+  } else {
+    const varName = cfg.dailyVars.split(",")[0];
+    const values = data.daily[varName];
+    if (!values) {
+      throw new Error(`Open-Meteo response missing variable: ${varName}`);
+    }
+    const monthly = aggregateMonthly(dates, values, cfg.aggregation);
+    if (monthly.length === 0) {
+      throw new Error("No monthly data after aggregation");
+    }
+    observedValue = monthly[monthly.length - 1].value;
+  }
+  const triggered = evaluateTrigger(observedValue, policy.triggerThreshold, policy.hazardName);
   return {
-    triggered: parsed.triggered ? 1 : 0,
-    value: Number(parsed.value ?? 0),
-    threshold: Number(parsed.threshold ?? policy.triggerThreshold)
+    triggered: triggered ? 1 : 0,
+    value: Math.round(observedValue * 1e4) / 1e4,
+    threshold: policy.triggerThreshold
   };
 };
 var getActivePolicies = (runtime2) => {
@@ -16452,7 +16589,7 @@ var checkPoliciesAndTriggerPayouts = (runtime2) => {
   for (const policy of activePolicies) {
     try {
       runtime2.log(`Checking policy ${policy.id}: hazard=${policy.hazardName}, ` + `location=(${policy.lat}, ${policy.lon}), threshold=${policy.triggerThreshold}`);
-      const result = httpCapability.sendRequest(runtime2, createPolicyFetcher(policy), ConsensusAggregationByFields({
+      const result = httpCapability.sendRequest(runtime2, createWeatherFetcher(policy), ConsensusAggregationByFields({
         triggered: median,
         value: median,
         threshold: median

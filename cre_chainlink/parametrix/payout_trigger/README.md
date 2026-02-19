@@ -1,6 +1,6 @@
 # Parametrix — CRE Payout Trigger Workflow
 
-Automated parametric insurance payout trigger built on the **Chainlink Runtime Environment (CRE)**. The workflow monitors on-chain insurance policies, fetches real-world weather data via a backend API with DON consensus, and triggers payouts when conditions are met — fully autonomous, no manual intervention required.
+Automated parametric insurance payout trigger built on the **Chainlink Runtime Environment (CRE)**. The workflow monitors on-chain insurance policies, fetches real-world weather data directly from **Open-Meteo** (free, public, no-auth) with DON consensus, and triggers payouts when conditions are met — fully autonomous, no centralized backend dependency.
 
 ## Architecture
 
@@ -19,10 +19,16 @@ Automated parametric insurance payout trigger built on the **Chainlink Runtime E
 │       │ Read Active Policies│◄─── PolicyManager (on-chain)  │
 │       └─────────┬───────────┘                               │
 │                 ▼                                            │
+│       ┌─────────────────────┐     Open-Meteo APIs:          │
+│       │ GET weather data    │◄─── archive-api (heatwave)    │
+│       │ (DON consensus via  │     flood-api (flood)         │
+│       │  median aggregation)│     archive-api (drought)     │
+│       └─────────┬───────────┘                               │
+│                 ▼                                            │
 │       ┌─────────────────────┐                               │
-│       │ POST /check-event   │◄─── Parametrix Python API     │
-│       │ (DON consensus via  │     (Open-Meteo weather data) │
-│       │  median aggregation)│                               │
+│       │ Aggregate & evaluate│                               │
+│       │ Monthly max/mean/   │                               │
+│       │ Thornthwaite PET    │                               │
 │       └─────────┬───────────┘                               │
 │                 ▼                                            │
 │       ┌─────────────────────┐                               │
@@ -49,9 +55,10 @@ A user buys a parametric insurance policy via the frontend or directly on-chain.
 On a configurable cron schedule, the workflow:
 1. Reads all policies from `PolicyManager` (iterates `1..nextId`)
 2. Filters to **active** policies (not paid out, not expired)
-3. For each active policy, calls `POST /check-event` on the Parametrix Python API
-4. DON nodes each call the API independently; results are aggregated via **median consensus**
-5. If the trigger condition is met → calls `triggerPayout()` on-chain
+3. For each active policy, fetches weather data directly from Open-Meteo
+4. Aggregates daily data to monthly values (max, mean, or Thornthwaite PET deficit)
+5. DON nodes each call Open-Meteo independently; results are aggregated via **median consensus**
+6. If the trigger condition is met → calls `triggerPayout()` on-chain
 
 ### 3. Payout Execution
 When a policy is triggered:
@@ -62,19 +69,27 @@ When a policy is triggered:
 
 ## Supported Hazards
 
-| Hazard ID | Type | Trigger Condition |
-|-----------|------|-------------------|
-| 0 | **Heatwave** | Temperature >= threshold |
-| 1 | **Flood** | Precipitation >= threshold |
-| 2 | **Drought** | Precipitation <= threshold |
+| Hazard ID | Type | Open-Meteo Endpoint | Variable | Aggregation | Trigger |
+|-----------|------|---------------------|----------|-------------|---------|
+| 0 | **Heatwave** | `archive-api.open-meteo.com` | `wet_bulb_temperature_2m_max` | Monthly max | value > threshold |
+| 1 | **Flood** | `flood-api.open-meteo.com` | `river_discharge` | Monthly max | value > threshold |
+| 2 | **Drought** | `archive-api.open-meteo.com` | `temperature_2m_mean` + `precipitation_sum` | Thornthwaite PET deficit | value < threshold |
 
-Each policy stores its own `lat`, `lon` (as `int32 × 10000`), and `triggerThreshold`. The Python API fetches historical weather data from Open-Meteo for the exact coordinates.
+Each policy stores its own `lat`, `lon` (as `int32 × 10000`), and `triggerThreshold`. The workflow fetches historical weather data from Open-Meteo for the exact coordinates.
+
+### Thornthwaite PET (Drought)
+For drought evaluation, the workflow computes a water deficit using the Thornthwaite method:
+1. Aggregate daily temperature (mean) and precipitation (sum) to monthly values
+2. Compute monthly heat index: `I = (max(T, 0) / 5)^1.514`
+3. Compute annual heat index via 12-month rolling sum
+4. Compute PET: `16 * (10T / I_annual)^a` where `a` is a polynomial of `I_annual`
+5. Water deficit: `D = precipitation - PET` (negative values indicate drought)
 
 ## Project Structure
 
 ```
 payout_trigger/
-├── main.ts                  # CRE workflow (triggers, handlers, payout logic)
+├── main.ts                  # CRE workflow (triggers, weather fetching, payout logic)
 ├── config.staging.json      # Staging config (Tenderly virtual testnet)
 ├── config.production.json   # Production config template
 ├── package.json             # Dependencies (@chainlink/cre-sdk, viem, zod)
@@ -95,7 +110,10 @@ payout_trigger/
   - `CronCapability` with configurable schedule
   - `EVMClient.logTrigger` for `PolicyPurchased` events
 - **`getActivePolicies(runtime)`** — Reads all policies from chain, filters active ones
-- **`createPolicyFetcher(policy)`** — Creates an HTTP callback for DON consensus that calls `POST /check-event` with the policy's coordinates, hazard type, and threshold
+- **`createWeatherFetcher(policy)`** — Creates an HTTP callback for DON consensus that calls Open-Meteo directly, aggregates daily→monthly data, and evaluates the trigger condition
+- **`aggregateMonthly(dates, values, method)`** — Groups daily values by month, applies max or mean
+- **`computeThornthwaiteDeficit(dates, temps, precips)`** — Computes monthly water deficit for drought
+- **`evaluateTrigger(value, threshold, hazard)`** — Threshold comparison per hazard type
 - **`triggerPayout(runtime, policyId, observedValue, payoutAmount)`** — Encodes `triggerPayout` calldata, generates a DON consensus report, and submits the transaction via `writeReport`
 
 ### `config.staging.json`
@@ -103,7 +121,6 @@ payout_trigger/
 ```json
 {
   "schedule": "*/2 * * * *",
-  "parametrixApiUrl": "http://localhost:8000",
   "lookbackMonths": 3,
   "evms": [{
     "policyManagerAddress": "0x4b0aF97a249Dbf50203C7Cadb8Ee628DC767F09f",
@@ -118,7 +135,8 @@ payout_trigger/
 - **Bun** — [bun.com/docs/installation](https://bun.com/docs/installation)
 - **Chainlink CRE CLI** — `npm install -g @chainlink/cre-cli`
 - **Deployed PolicyManager** — See `smart-contracts/` for deployment scripts
-- **Parametrix Python API** running — provides the `/check-event` endpoint
+
+No external API keys or backend services required — the workflow calls Open-Meteo directly (free, public API).
 
 ## Setup & Simulation
 
@@ -220,12 +238,13 @@ event PolicyExpiredReleased(
 | `CronCapability` | Periodic policy monitoring on configurable schedule |
 | `EVMClient.logTrigger` | React to `PolicyPurchased` events in real-time |
 | `EVMClient.callContract` | Read policy data from chain (`policies()`, `holderOf()`, `nextId()`) |
-| `HTTPClient.sendRequest` | Call Parametrix API with DON consensus via median aggregation |
+| `HTTPClient.sendRequest` | Fetch weather data from Open-Meteo with DON consensus via median |
 | `EVMClient.writeReport` | Submit `triggerPayout()` transaction with DON-signed report |
 | `runtime.report()` | Generate consensus report for on-chain verification |
 
 ## Security
 
+- **No centralized dependency**: Weather data fetched directly from Open-Meteo (public API) — each DON node verifies independently
 - **Oracle authorization**: Only the DON address (set via `setOracle()`) can call `triggerPayout()`
 - **DON consensus**: Weather data aggregated via median across multiple nodes — no single point of failure
 - **Share reservation**: Each policy's coverage is backed by reserved vault shares at purchase time
@@ -236,3 +255,4 @@ event PolicyExpiredReleased(
 - [Chainlink CRE Documentation](https://docs.chain.link/cre)
 - [CRE Service Quotas](https://docs.chain.link/cre/service-quotas)
 - [Chain Selector Names](https://github.com/smartcontractkit/chain-selectors/blob/main/selectors.yml)
+- [Open-Meteo API Documentation](https://open-meteo.com/en/docs)

@@ -1,6 +1,5 @@
 {
   "schedule": "*/2 * * * *",
-  "parametrixApiUrl": "http://localhost:8000",
   "lookbackMonths": 3,
   "evms": [
     {
