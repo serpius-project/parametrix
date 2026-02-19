@@ -12,11 +12,10 @@ interface MapViewProps {
   onLocationSelect: (lat: number, lon: number, site: Site, distanceKm: number) => void
 }
 
-export default function MapView({ sites, selectedSite, onLocationSelect }: MapViewProps) {
+export default function MapView({ sites, onLocationSelect }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
   const geocoderRef = useRef<MapboxGeocoder | null>(null)
-  const markersRef = useRef<mapboxgl.Marker[]>([])
   const clickMarkerRef = useRef<mapboxgl.Marker | null>(null)
   // Keep latest callbacks in refs so map/geocoder handlers always use current values
   const sitesRef = useRef(sites)
@@ -36,10 +35,10 @@ export default function MapView({ sites, selectedSite, onLocationSelect }: MapVi
       .setLngLat([lon, lat])
       .addTo(map)
 
-    // Fly to nearest site
+    // Zoom into the clicked location
     map.flyTo({
-      center: [result.site.lon, result.site.lat],
-      zoom: Math.max(map.getZoom(), 5),
+      center: [lon, lat],
+      zoom: Math.max(map.getZoom(), 15),
       duration: 1500,
     })
 
@@ -55,8 +54,11 @@ export default function MapView({ sites, selectedSite, onLocationSelect }: MapVi
     const map = new mapboxgl.Map({
       container: containerRef.current,
       style: 'mapbox://styles/mapbox/dark-v11',
-      center: [0, 20],
-      zoom: 1.5,
+      center: [8.5417, 47.3769], // Zurich
+      zoom: 12,
+      pitch: 45,
+      antialias: true,
+      customAttribution: '© Wedefin Labs',
     })
 
     map.addControl(new mapboxgl.NavigationControl(), 'top-right')
@@ -78,6 +80,37 @@ export default function MapView({ sites, selectedSite, onLocationSelect }: MapVi
       selectLocation(map, lat, lon)
     })
 
+    // Add 3D buildings once style loads
+    map.on('load', () => {
+      const layers = map.getStyle().layers
+      // Find the first symbol layer to insert buildings beneath labels
+      let labelLayerId: string | undefined
+      for (const layer of layers || []) {
+        if (layer.type === 'symbol' && (layer.layout as any)?.['text-field']) {
+          labelLayerId = layer.id
+          break
+        }
+      }
+
+      map.addLayer(
+        {
+          id: '3d-buildings',
+          source: 'composite',
+          'source-layer': 'building',
+          filter: ['==', 'extrude', 'true'],
+          type: 'fill-extrusion',
+          minzoom: 14,
+          paint: {
+            'fill-extrusion-color': '#aaa',
+            'fill-extrusion-height': ['get', 'height'],
+            'fill-extrusion-base': ['get', 'min_height'],
+            'fill-extrusion-opacity': 0.6,
+          },
+        },
+        labelLayerId,
+      )
+    })
+
     // Handle map clicks
     map.on('click', (e: mapboxgl.MapMouseEvent) => {
       selectLocation(map, e.lngLat.lat, e.lngLat.lng)
@@ -93,48 +126,6 @@ export default function MapView({ sites, selectedSite, onLocationSelect }: MapVi
     }
   }, [selectLocation])
 
-  // Add site markers
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || sites.length === 0) return
-
-    markersRef.current.forEach((m) => m.remove())
-    markersRef.current = []
-
-    sites.forEach((site) => {
-      const el = document.createElement('div')
-      el.className = 'site-marker'
-      el.title = `${site.name} — ${site.city}`
-
-      const marker = new mapboxgl.Marker({ element: el })
-        .setLngLat([site.lon, site.lat])
-        .setPopup(
-          new mapboxgl.Popup({ offset: 25, closeButton: false }).setHTML(
-            `<div class="site-popup">
-              <strong>${site.name}</strong>
-              <p>${site.city}</p>
-              <p class="hazards">${site.available_hazards.join(', ')}</p>
-            </div>`,
-          ),
-        )
-        .addTo(map)
-
-      markersRef.current.push(marker)
-    })
-  }, [sites])
-
-  // Highlight selected site
-  useEffect(() => {
-    markersRef.current.forEach((marker) => {
-      const el = marker.getElement()
-      const lngLat = marker.getLngLat()
-      const isSelected =
-        selectedSite &&
-        Math.abs(lngLat.lat - selectedSite.lat) < 0.001 &&
-        Math.abs(lngLat.lng - selectedSite.lon) < 0.001
-      el.classList.toggle('selected', !!isSelected)
-    })
-  }, [selectedSite])
 
   return <div ref={containerRef} className="map-container" />
 }
