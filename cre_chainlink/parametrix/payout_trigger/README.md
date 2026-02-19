@@ -1,154 +1,238 @@
-# Trying out the Developer PoR example
+# Parametrix — CRE Payout Trigger Workflow
 
-This template provides an end-to-end Proof-of-Reserve (PoR) example (including precompiled smart contracts). It's designed to showcase key CRE capabilities and help you get started with local simulation quickly.
+Automated parametric insurance payout trigger built on the **Chainlink Runtime Environment (CRE)**. The workflow monitors on-chain insurance policies, fetches real-world weather data via a backend API with DON consensus, and triggers payouts when conditions are met — fully autonomous, no manual intervention required.
 
-Follow the steps below to run the example:
-
-## 1. Initialize CRE project
-
-Start by initializing a new CRE project. This will scaffold the necessary project structure and a template workflow. Run cre init in the directory where you'd like your CRE project to live.
-
-Example output:
+## Architecture
 
 ```
-Project name?: my_cre_project
-✔ Custom data feed: Typescript updating on-chain data periodically using offchain API data
-✔ Workflow name?: workflow01
+┌──────────────────────────────────────────────────────────────┐
+│                  CHAINLINK CRE WORKFLOW                      │
+│                                                              │
+│  ┌──────────────┐        ┌──────────────┐                   │
+│  │  Log Trigger │        │ Cron Trigger │                   │
+│  │ (new policy  │        │ (every N min)│                   │
+│  │  purchased)  │        │              │                   │
+│  └──────┬───────┘        └──────┬───────┘                   │
+│         └────────┬──────────────┘                            │
+│                  ▼                                           │
+│       ┌─────────────────────┐                               │
+│       │ Read Active Policies│◄─── PolicyManager (on-chain)  │
+│       └─────────┬───────────┘                               │
+│                 ▼                                            │
+│       ┌─────────────────────┐                               │
+│       │ POST /check-event   │◄─── Parametrix Python API     │
+│       │ (DON consensus via  │     (Open-Meteo weather data) │
+│       │  median aggregation)│                               │
+│       └─────────┬───────────┘                               │
+│                 ▼                                            │
+│       ┌─────────────────────┐                               │
+│       │ If triggered →      │                               │
+│       │ triggerPayout()     │──── PolicyManager (on-chain)   │
+│       └─────────────────────┘                               │
+└──────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+              ┌───────────────────────┐
+              │  UnderwriterVault     │
+              │  Burns reserved shares│
+              │  Transfers USDC to    │
+              │  policyholder         │
+              └───────────────────────┘
 ```
 
-## 2. Update .env file
+## How It Works
 
-You need to add a private key to the .env file. This is specifically required if you want to simulate chain writes. For that to work the key should be valid and funded.
-If your workflow does not do any chain write then you can keep a dummy key as a private key. e.g.
+### 1. Policy Purchase
+A user buys a parametric insurance policy via the frontend or directly on-chain. The `PolicyManager` contract emits a `PolicyPurchased` event, which the CRE Log Trigger detects.
+
+### 2. Continuous Monitoring (Cron)
+On a configurable cron schedule, the workflow:
+1. Reads all policies from `PolicyManager` (iterates `1..nextId`)
+2. Filters to **active** policies (not paid out, not expired)
+3. For each active policy, calls `POST /check-event` on the Parametrix Python API
+4. DON nodes each call the API independently; results are aggregated via **median consensus**
+5. If the trigger condition is met → calls `triggerPayout()` on-chain
+
+### 3. Payout Execution
+When a policy is triggered:
+- The CRE workflow generates a consensus report signed by the DON
+- Submits `triggerPayout(policyId, observedValue, payoutAmount)` to `PolicyManager`
+- The contract validates the call (only the authorized oracle can trigger), calculates the actual payout based on reserved vault shares, and transfers USDC to the policyholder
+- Emits `PayoutTriggered` event
+
+## Supported Hazards
+
+| Hazard ID | Type | Trigger Condition |
+|-----------|------|-------------------|
+| 0 | **Heatwave** | Temperature >= threshold |
+| 1 | **Flood** | Precipitation >= threshold |
+| 2 | **Drought** | Precipitation <= threshold |
+
+Each policy stores its own `lat`, `lon` (as `int32 × 10000`), and `triggerThreshold`. The Python API fetches historical weather data from Open-Meteo for the exact coordinates.
+
+## Project Structure
 
 ```
-CRE_ETH_PRIVATE_KEY=0000000000000000000000000000000000000000000000000000000000000001
+payout_trigger/
+├── main.ts                  # CRE workflow (triggers, handlers, payout logic)
+├── config.staging.json      # Staging config (Tenderly virtual testnet)
+├── config.production.json   # Production config template
+├── package.json             # Dependencies (@chainlink/cre-sdk, viem, zod)
+└── README.md                # This file
+
+../contracts/abi/
+├── PolicyManager.ts         # PolicyManager ABI (events + functions)
+└── index.ts                 # ABI exports
+
+../project.yaml              # CRE project settings (RPC endpoints, workflow paths)
 ```
 
-## 3. Install dependencies
+## Key Files
 
-If `bun` is not already installed, see https://bun.com/docs/installation for installing in your environment.
+### `main.ts` — Workflow Logic
+
+- **`initWorkflow(config)`** — Registers two triggers:
+  - `CronCapability` with configurable schedule
+  - `EVMClient.logTrigger` for `PolicyPurchased` events
+- **`getActivePolicies(runtime)`** — Reads all policies from chain, filters active ones
+- **`createPolicyFetcher(policy)`** — Creates an HTTP callback for DON consensus that calls `POST /check-event` with the policy's coordinates, hazard type, and threshold
+- **`triggerPayout(runtime, policyId, observedValue, payoutAmount)`** — Encodes `triggerPayout` calldata, generates a DON consensus report, and submits the transaction via `writeReport`
+
+### `config.staging.json`
+
+```json
+{
+  "schedule": "*/2 * * * *",
+  "parametrixApiUrl": "http://localhost:8000",
+  "lookbackMonths": 3,
+  "evms": [{
+    "policyManagerAddress": "0x4b0aF97a249Dbf50203C7Cadb8Ee628DC767F09f",
+    "chainSelectorName": "ethereum-testnet-sepolia",
+    "gasLimit": "1000000"
+  }]
+}
+```
+
+## Prerequisites
+
+- **Bun** — [bun.com/docs/installation](https://bun.com/docs/installation)
+- **Chainlink CRE CLI** — `npm install -g @chainlink/cre-cli`
+- **Deployed PolicyManager** — See `smart-contracts/` for deployment scripts
+- **Parametrix Python API** running — provides the `/check-event` endpoint
+
+## Setup & Simulation
+
+### 1. Install Dependencies
 
 ```bash
-cd <workflow-name> && bun install
+cd payout_trigger && bun install
 ```
 
-Example: For a workflow directory named `workflow01` the command would be:
+### 2. Configure Environment
 
-```bash
-cd workflow01 && bun install
+Create a `.env` file with your private key (needed for chain write simulation):
+
+```
+CRE_ETH_PRIVATE_KEY=<your_private_key>
 ```
 
-## 4. Configure RPC endpoints
+### 3. Configure RPC
 
-For local simulation to interact with a chain, you must specify RPC endpoints for the chains you interact with in the `project.yaml` file. This is required for submitting transactions and reading blockchain state.
-
-Note: The following 7 chains are supported in local simulation (both testnet and mainnet variants):
-
-- Ethereum (`ethereum-testnet-sepolia`, `ethereum-mainnet`)
-- Base (`ethereum-testnet-sepolia-base-1`, `ethereum-mainnet-base-1`)
-- Avalanche (`avalanche-testnet-fuji`, `avalanche-mainnet`)
-- Polygon (`polygon-testnet-amoy`, `polygon-mainnet`)
-- BNB Chain (`binance-smart-chain-testnet`, `binance-smart-chain-mainnet`)
-- Arbitrum (`ethereum-testnet-sepolia-arbitrum-1`, `ethereum-mainnet-arbitrum-1`)
-- Optimism (`ethereum-testnet-sepolia-optimism-1`, `ethereum-mainnet-optimism-1`)
-
-Add your preferred RPCs under the `rpcs` section. For chain names, refer to https://github.com/smartcontractkit/chain-selectors/blob/main/selectors.yml
-
-## 5. Deploy contracts and prepare ABIs
-
-### 5a. Deploy contracts
-
-Deploy the BalanceReader, MessageEmitter, ReserveManager and SimpleERC20 contracts. You can either do this on a local chain or on a testnet using tools like cast/foundry.
-
-For a quick start, you can also use the pre-deployed contract addresses on Ethereum Sepolia—no action required on your part if you're just trying things out.
-
-### 5b. Prepare ABIs
-
-For each contract you would like to interact with, you need to provide the ABI `.ts` file so that TypeScript can provide type safety and autocomplete for the contract methods. The format of the ABI files is very similar to regular JSON format; you just need to export it as a variable and mark it `as const`. For example:
-
-```ts
-// IERC20.ts file
-export const IERC20Abi = {
-  // ... your ABI here ...
-} as const;
-```
-
-For a quick start, every contract used in this workflow is already provided in the `contracts` folder. You can use them as a reference.
-
-## 6. Configure workflow
-
-Configure `config.json` for the workflow
-
-- `schedule` should be set to `"0 */1 * * * *"` for every 1 minute(s) or any other cron expression you prefer, note [CRON service quotas](https://docs.chain.link/cre/service-quotas)
-- `url` should be set to existing reserves HTTP endpoint API
-- `tokenAddress` should be the SimpleERC20 contract address
-- `porAddress` should be the ReserveManager contract address
-- `proxyAddress` should be the UpdateReservesProxySimplified contract address
-- `balanceReaderAddress` should be the BalanceReader contract address
-- `messageEmitterAddress` should be the MessageEmitter contract address
-- `chainSelectorName` should be human-readable chain name of selected chain (refer to https://github.com/smartcontractkit/chain-selectors/blob/main/selectors.yml)
-- `gasLimit` should be the gas limit of chain write
-
-The config is already populated with deployed contracts in template.
-
-Note: Make sure your `workflow.yaml` file is pointing to the config.json, example:
+In `project.yaml`, set the RPC URL for your target chain under `staging-settings.rpcs`:
 
 ```yaml
 staging-settings:
-  user-workflow:
-    workflow-name: "workflow01"
-  workflow-artifacts:
-    workflow-path: "./main.ts"
-    config-path: "./config.json"
-    secrets-path: ""
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: <your_rpc_url>
 ```
 
-## 7. Simulate the workflow
-
-Run the command from <b>project root directory</b> and pass in the path to the workflow directory.
+### 4. Simulate the Workflow
 
 ```bash
-cre workflow simulate <path-to-workflow-directory>
+cre workflow simulate ./payout_trigger
 ```
 
-For a workflow directory named `workflow01` the exact command would be:
+Select trigger type:
+- **Option 1 (Cron)**: Immediately checks all active policies
+- **Option 2 (Log)**: Provide a `PolicyPurchased` transaction hash and event index
+
+Example simulation output:
+
+```
+Starting policy check...
+Next policy ID: 3
+Found 2 active policies
+Checking policy 1: hazard=heatwave, location=(39.5, -119.8), threshold=35
+Policy 1: triggered=false, value=8.2, threshold=35
+Checking policy 2: hazard=heatwave, location=(39.5, -119.8), threshold=35
+Policy 2: triggered=true, value=42.1, threshold=35
+Policy 2 TRIGGERED! Observed 42.1 (threshold: 35). Initiating payout...
+Payout triggered successfully at txHash: 0x...
+Checked 2 policies, triggered 1 payouts
+```
+
+> **Note**: `cre workflow simulate` runs the workflow logic locally but does NOT submit actual on-chain transactions (you'll see "Skipping WorkflowEngineV2"). To execute real payouts, deploy to a Chainlink DON.
+
+### 5. Deploy to DON
 
 ```bash
-cre workflow simulate ./workflow01
+cre workflow deploy --config workflow.yaml --target staging-settings
 ```
 
-After this you will get a set of options similar to:
+After deployment, set the DON address as the oracle in the PolicyManager contract:
 
-```
-🚀 Workflow simulation ready. Please select a trigger:
-1. cron-trigger@1.0.0 Trigger
-2. evm:ChainSelector:16015286601757825753@1.0.0 LogTrigger
-
-Enter your choice (1-2):
+```bash
+cast send <POLICY_MANAGER> "setOracle(address)" <DON_ADDRESS> \
+  --rpc-url <RPC_URL> --private-key <PRIVATE_KEY>
 ```
 
-You can simulate each of the following triggers types as follows
+## Smart Contract Events
 
-### 7a. Simulating Cron Trigger Workflows
+The `PolicyManager` contract emits these events for CRE monitoring:
 
-Select option 1, and the workflow should immediately execute.
+```solidity
+event PolicyPurchased(
+    uint256 indexed policyId,
+    address indexed holder,
+    Hazard hazard,
+    uint256 start, uint256 end,
+    uint256 maxCoverage, uint256 triggerThreshold
+);
 
-### 7b. Simulating Log Trigger Workflows
+event PayoutTriggered(
+    uint256 indexed policyId,
+    address indexed holder,
+    uint256 observedValue,
+    uint256 requestedPayout, uint256 actualPayout
+);
 
-Select option 2, and then two additional prompts will come up and you can pass in the example inputs:
-
-Transaction Hash: 0x9394cc015736e536da215c31e4f59486a8d85f4cfc3641e309bf00c34b2bf410
-Log Event Index: 0
-
-The output will look like:
-
+event PolicyExpiredReleased(
+    uint256 indexed policyId,
+    uint256 sharesReleased
+);
 ```
-🔗 EVM Trigger Configuration:
-Please provide the transaction hash and event index for the EVM log event.
-Enter transaction hash (0x...): 0x9394cc015736e536da215c31e4f59486a8d85f4cfc3641e309bf00c34b2bf410
-Enter event index (0-based): 0
-Fetching transaction receipt for transaction 0x9394cc015736e536da215c31e4f59486a8d85f4cfc3641e309bf00c34b2bf410...
-Found log event at index 0: contract=0x1d598672486ecB50685Da5497390571Ac4E93FDc, topics=3
-Created EVM trigger log for transaction 0x9394cc015736e536da215c31e4f59486a8d85f4cfc3641e309bf00c34b2bf410, event 0
-```
+
+## CRE SDK Capabilities Used
+
+| Capability | Usage |
+|------------|-------|
+| `CronCapability` | Periodic policy monitoring on configurable schedule |
+| `EVMClient.logTrigger` | React to `PolicyPurchased` events in real-time |
+| `EVMClient.callContract` | Read policy data from chain (`policies()`, `holderOf()`, `nextId()`) |
+| `HTTPClient.sendRequest` | Call Parametrix API with DON consensus via median aggregation |
+| `EVMClient.writeReport` | Submit `triggerPayout()` transaction with DON-signed report |
+| `runtime.report()` | Generate consensus report for on-chain verification |
+
+## Security
+
+- **Oracle authorization**: Only the DON address (set via `setOracle()`) can call `triggerPayout()`
+- **DON consensus**: Weather data aggregated via median across multiple nodes — no single point of failure
+- **Share reservation**: Each policy's coverage is backed by reserved vault shares at purchase time
+- **Dynamic payout**: If the vault is underfunded, the contract pays out proportionally based on available share value
+
+## Resources
+
+- [Chainlink CRE Documentation](https://docs.chain.link/cre)
+- [CRE Service Quotas](https://docs.chain.link/cre/service-quotas)
+- [Chain Selector Names](https://github.com/smartcontractkit/chain-selectors/blob/main/selectors.yml)
