@@ -95,13 +95,6 @@ Edit config files with deployed PolicyManager address:
 }
 ```
 
-Add weather API key to both files:
-```json
-{
-  "weatherApiKey": "your_openweathermap_api_key"
-}
-```
-
 ### 5️⃣ Deploy CRE Workflow
 
 ```bash
@@ -175,7 +168,6 @@ cast send <POLICY_MANAGER_ADDRESS> \
 - [ ] Smart contracts deployed to both networks
 - [ ] Deployment addresses saved
 - [ ] CRE configs updated with PolicyManager addresses
-- [ ] Weather API key added to configs
 - [ ] CRE workflow deployed to DON
 - [ ] Oracle address set in PolicyManager
 - [ ] Ownership transferred to multisig (mainnet only)
@@ -187,8 +179,7 @@ cast send <POLICY_MANAGER_ADDRESS> \
 ## 📚 Documentation
 
 - **Full Deployment Guide**: [smart-contracts/script/DEPLOYMENT.md](smart-contracts/script/DEPLOYMENT.md)
-- **CRE Setup Guide**: [cre_chainlink/parametrix/payout_trigger/CRE_SETUP.md](cre_chainlink/parametrix/payout_trigger/CRE_SETUP.md)
-- **Integration Summary**: [cre_chainlink/parametrix/payout_trigger/INTEGRATION_SUMMARY.md](cre_chainlink/parametrix/payout_trigger/INTEGRATION_SUMMARY.md)
+- **CRE Workflow README**: [cre_chainlink/parametrix/payout_trigger/README.md](cre_chainlink/parametrix/payout_trigger/README.md)
 
 ---
 

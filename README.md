@@ -12,7 +12,7 @@ Parametrix provides parametric insurance for data centers and the lenders financ
 
 2. **Automated monitoring** — A Chainlink CRE workflow runs on a cron schedule (every 2 minutes in staging). It reads all active policies from the smart contract, including each policy's geographic coordinates, hazard type, and trigger threshold.
 
-3. **Weather data retrieval** — For each active policy, the CRE workflow calls the Python backend API's `/check-event` endpoint with the policy's lat/lon, hazard type, and threshold. The API fetches real weather observations from Open-Meteo and evaluates the trigger condition.
+3. **Weather data retrieval** — For each active policy, the CRE workflow calls the Open-Meteo public API directly with the policy's lat/lon and hazard type. Each DON node fetches weather data independently, aggregates daily observations to monthly values, and evaluates the trigger condition. Results are verified via DON median consensus.
 
 4. **Payout execution** — If the trigger condition is met (e.g., temperature exceeds 35°C for a heatwave policy), the CRE workflow submits a `triggerPayout` transaction on-chain. The UnderwriterVault releases funds to the policyholder using a pro-rata model when multiple policies are active.
 
@@ -37,10 +37,10 @@ Parametrix uses a **Chainlink CRE (Chainlink Runtime Environment) workflow** as 
 
 | File | Description |
 |---|---|
-| [`cre_chainlink/parametrix/payout_trigger/main.ts`](cre_chainlink/parametrix/payout_trigger/main.ts) | CRE workflow entry point — cron trigger reads active policies via `EVMClient.callContract()`, calls the weather API via `HTTPClient.sendRequest()` with DON consensus aggregation (`median`), and writes payout transactions via `EVMClient.writeReport()` |
+| [`cre_chainlink/parametrix/payout_trigger/main.ts`](cre_chainlink/parametrix/payout_trigger/main.ts) | CRE workflow entry point — cron trigger reads active policies via `EVMClient.callContract()`, fetches weather data from Open-Meteo via `HTTPClient.sendRequest()` with DON consensus aggregation (`median`), aggregates and evaluates triggers in-workflow, and writes payout transactions via `EVMClient.writeReport()` |
 | [`cre_chainlink/parametrix/contracts/abi/PolicyManager.ts`](cre_chainlink/parametrix/contracts/abi/PolicyManager.ts) | ABI definition used by the CRE workflow to read policies and trigger payouts on-chain |
 | [`cre_chainlink/parametrix/payout_trigger/workflow.yaml`](cre_chainlink/parametrix/payout_trigger/workflow.yaml) | Workflow registration config — defines workflow names and artifact paths for staging/production targets |
-| [`cre_chainlink/parametrix/payout_trigger/config.staging.json`](cre_chainlink/parametrix/payout_trigger/config.staging.json) | Staging config — cron schedule, Python API URL, PolicyManager contract address, chain selector |
+| [`cre_chainlink/parametrix/payout_trigger/config.staging.json`](cre_chainlink/parametrix/payout_trigger/config.staging.json) | Staging config — cron schedule, lookback months, PolicyManager contract address, chain selector |
 | [`cre_chainlink/parametrix/payout_trigger/config.production.json`](cre_chainlink/parametrix/payout_trigger/config.production.json) | Production config |
 | [`cre_chainlink/parametrix/project.yaml`](cre_chainlink/parametrix/project.yaml) | CRE project settings — RPC endpoints per deployment target |
 | [`cre_chainlink/parametrix/payout_trigger/package.json`](cre_chainlink/parametrix/payout_trigger/package.json) | Dependencies — includes `@chainlink/cre-sdk` |
@@ -50,7 +50,7 @@ Parametrix uses a **Chainlink CRE (Chainlink Runtime Environment) workflow** as 
 - **CronCapability** — periodic trigger to check all active policies on a schedule
 - **EVMClient.logTrigger** — listens for `PolicyPurchased` events on-chain
 - **EVMClient.callContract** — reads policy data (hazard, lat/lon, threshold, coverage) from the smart contract
-- **HTTPClient.sendRequest** — calls the external Python API with DON consensus via `ConsensusAggregationByFields` + `median`
+- **HTTPClient.sendRequest** — fetches weather data from Open-Meteo with DON consensus via `ConsensusAggregationByFields` + `median`
 - **Runtime.report + EVMClient.writeReport** — generates a consensus report and submits the payout transaction on-chain
 
 ---
@@ -94,15 +94,7 @@ forge script script/BuyPolicy.s.sol:BuyPolicyScript \
   --broadcast -vvvv
 ```
 
-### 3. Start the Python API
-
-```bash
-cd backend-python
-pip install -r requirements.txt
-python api.py
-```
-
-### 4. Run the CRE simulation
+### 3. Run the CRE simulation
 
 ```bash
 cd cre_chainlink/parametrix/payout_trigger
@@ -127,7 +119,7 @@ Workflow compiled
 Workflow Simulation Result: "Checked 1 policies, triggered 0 payouts"
 ```
 
-The workflow reads the policy from the blockchain, calls the weather API, and evaluates the trigger. In this example, the observed temperature (8.2°C) is below the 35°C heatwave threshold, so no payout is triggered.
+The workflow reads the policy from the blockchain, fetches weather data from Open-Meteo, and evaluates the trigger. In this example, the observed temperature (8.2°C) is below the 35°C heatwave threshold, so no payout is triggered.
 
 ---
 
