@@ -32,7 +32,12 @@ export const formatUnit = (unit: string): string =>
 
 /** Clean up a hazard description for display (e.g. remove "D_mm") */
 export const formatDescription = (desc: string): string =>
-  desc.replace(/\s*D_mm\s*/g, ' ').replace(/\s{2,}/g, ' ').trim()
+  desc
+    .replace(/\s*D_mm\s*/g, ' ')
+    .replace(/Wet-bulb temperature/gi, 'Wet-bulb Temp.')
+    .replace(/\s*\(precip\s*-\s*PET,\s*/gi, '(')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
 
 /** Format a Unix timestamp to a readable date */
 export const formatDate = (timestamp: number): string =>

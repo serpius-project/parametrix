@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { Site, WizardState, PremiumResponse } from '../../types'
 import { useHazards } from '../../hooks/useHazards'
 import { usePremium } from '../../hooks/usePremium'
@@ -14,17 +14,63 @@ interface StepConfigureProps {
   onNext: (premium: PremiumResponse) => void
 }
 
-const DURATION_OPTIONS = [
-  { value: 1, label: '1 month' },
-  { value: 3, label: '3 months' },
-  { value: 6, label: '6 months' },
-  { value: 12, label: '12 months' },
-]
 
 const DEFAULT_THRESHOLDS: Record<string, number> = {
   heatwave: 35,
   flood: 500,
-  drought: -50,
+  drought: 2,
+}
+
+function DurationSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const min = 1
+  const max = 12
+  const pct = ((value - min) / (max - min)) * 100
+
+  const resolve = useCallback(
+    (clientX: number) => {
+      const track = trackRef.current
+      if (!track) return
+      const rect = track.getBoundingClientRect()
+      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+      const snapped = Math.round(min + ratio * (max - min))
+      onChange(snapped)
+    },
+    [onChange],
+  )
+
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault()
+      const el = e.currentTarget as HTMLElement
+      el.setPointerCapture(e.pointerId)
+      resolve(e.clientX)
+
+      const onMove = (ev: PointerEvent) => resolve(ev.clientX)
+      const onUp = () => {
+        el.removeEventListener('pointermove', onMove)
+        el.removeEventListener('pointerup', onUp)
+      }
+      el.addEventListener('pointermove', onMove)
+      el.addEventListener('pointerup', onUp)
+    },
+    [resolve],
+  )
+
+  return (
+    <div className="duration-slider-wrapper" onPointerDown={onPointerDown}>
+      <div className="duration-slider-track" ref={trackRef}>
+        <div className="duration-slider-thumb" style={{ left: `${pct}%` }} />
+      </div>
+      <div className="duration-slider-labels">
+        {[1, 3, 6, 9, 12].map((v) => (
+          <span key={v} style={{ left: `${((v - min) / (max - min)) * 100}%` }}>
+            {v}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export default function StepConfigure({
@@ -117,18 +163,9 @@ export default function StepConfigure({
 
       <div className="form-group">
         <label>
-          Duration
-          <select
-            value={wizard.durationMonths}
-            onChange={(e) => onChange({ durationMonths: parseInt(e.target.value, 10) })}
-          >
-            {DURATION_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+          Duration: {wizard.durationMonths} {wizard.durationMonths === 1 ? 'month' : 'months'}
         </label>
+        <DurationSlider value={wizard.durationMonths} onChange={(v) => onChange({ durationMonths: v })} />
       </div>
 
       {/* Premium result */}

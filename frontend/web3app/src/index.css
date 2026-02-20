@@ -645,6 +645,51 @@ body {
   border-color: var(--accent);
 }
 
+/* Duration slider */
+.duration-slider-wrapper {
+  margin-top: 8px;
+  cursor: pointer;
+  touch-action: none;
+  padding: 8px 8px; /* 8px horizontal = half thumb, so thumb stays within bounds */
+}
+
+.duration-slider-track {
+  position: relative;
+  height: 16px;
+  background: var(--border);
+  border-radius: 8px;
+}
+
+.duration-slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: box-shadow 0.15s;
+}
+
+.duration-slider-thumb:hover,
+.duration-slider-wrapper:active .duration-slider-thumb {
+  box-shadow: 0 0 0 4px rgba(79, 124, 255, 0.25);
+}
+
+.duration-slider-labels {
+  position: relative;
+  height: 14px;
+  margin-top: 14px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.duration-slider-labels span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
 /* Number input spinner arrows */
 .form-group input[type="number"] {
   -moz-appearance: textfield;
