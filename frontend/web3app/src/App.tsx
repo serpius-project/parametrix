@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import Header from './components/Header'
 import BuyPage from './pages/BuyPage'
 import DashboardPage from './pages/DashboardPage'
+import ProtocolHealthPage from './pages/ProtocolHealthPage'
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<BuyPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/health" element={<ProtocolHealthPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

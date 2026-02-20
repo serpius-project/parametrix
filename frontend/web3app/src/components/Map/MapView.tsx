@@ -222,7 +222,7 @@ export default function MapView({ sites, policies, onLocationSelect }: MapViewPr
       policies.forEach((p) => bounds.extend([int32ToCoord(p.lon), int32ToCoord(p.lat)]))
       map.fitBounds(bounds, { padding: 80, maxZoom: 12, duration: 1500 })
     } else {
-      map.flyTo({ center: [8.5417, 47.3769], zoom: 15, duration: 1500 })
+      map.flyTo({ center: [8.5417, 47.3769], zoom: 15, pitch: 45, duration: 1500 })
     }
   }, [policies])
 

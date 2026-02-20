@@ -1049,3 +1049,205 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Protocol Health Page ─────────────────────────────────────────────────── */
+
+.health-page {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.protocol-health {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.health-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.health-header h2 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.health-loading,
+.health-empty {
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 32px 0;
+}
+
+.health-error {
+  color: var(--error);
+  text-align: center;
+  padding: 32px 0;
+}
+
+/* Summary cards */
+.health-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.health-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.health-card-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.health-card-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.health-card-sub {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.health-card.ratio-healthy {
+  border-color: #22c55e;
+}
+
+.health-card.ratio-healthy .health-card-value {
+  color: #22c55e;
+}
+
+.health-card.ratio-warning {
+  border-color: #eab308;
+}
+
+.health-card.ratio-warning .health-card-value {
+  color: #eab308;
+}
+
+.health-card.ratio-danger {
+  border-color: #ef4444;
+}
+
+.health-card.ratio-danger .health-card-value {
+  color: #ef4444;
+}
+
+/* Visual bar */
+.health-bar-section {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.health-bar-section h3 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+}
+
+.health-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.health-bar {
+  position: relative;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.health-bar-deposits {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: rgba(79, 124, 255, 0.5);
+  border-radius: 12px;
+  transition: width 0.5s;
+}
+
+.health-bar-coverage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: rgba(239, 68, 68, 0.35);
+  border-radius: 12px;
+  transition: width 0.5s;
+  border-right: 2px solid #ef4444;
+}
+
+.health-bar-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.legend-dot.deposits {
+  background: rgba(79, 124, 255, 0.7);
+}
+
+.legend-dot.coverage {
+  background: rgba(239, 68, 68, 0.6);
+}
+
+/* Historical chart */
+.health-chart-section {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.health-chart-section h3 {
+  margin: 0 0 16px;
+  font-size: 0.95rem;
+}
+
+.health-chart {
+  width: 100%;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .health-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .health-bar-labels {
+    flex-direction: column;
+    gap: 2px;
+  }
+}

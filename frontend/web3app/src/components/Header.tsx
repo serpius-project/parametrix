@@ -18,6 +18,12 @@ export default function Header() {
           >
             Dashboard
           </NavLink>
+          <NavLink
+            to="/health"
+            className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
+          >
+            Protocol Health
+          </NavLink>
         </nav>
       </div>
       <DynamicWidget />
