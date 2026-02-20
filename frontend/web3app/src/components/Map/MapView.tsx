@@ -60,6 +60,7 @@ export default function MapView({ sites, policies, onLocationSelect }: MapViewPr
     map.flyTo({
       center: [lon, lat],
       zoom: Math.max(map.getZoom(), 15),
+      pitch: 45,
       duration: 1500,
     })
 
@@ -196,7 +197,7 @@ export default function MapView({ sites, policies, onLocationSelect }: MapViewPr
 
       el.addEventListener('click', (e) => {
         e.stopPropagation()
-        map.flyTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 15), duration: 1500 })
+        map.flyTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 15), pitch: 45, duration: 1500 })
         marker.togglePopup()
       })
 
@@ -265,7 +266,7 @@ export default function MapView({ sites, policies, onLocationSelect }: MapViewPr
 
       el.addEventListener('click', (e) => {
         e.stopPropagation()
-        map.flyTo({ center: [site.lon, site.lat], zoom: Math.max(map.getZoom(), 15), duration: 1500 })
+        map.flyTo({ center: [site.lon, site.lat], zoom: Math.max(map.getZoom(), 15), pitch: 45, duration: 1500 })
         marker.togglePopup()
       })
 

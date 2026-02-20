@@ -1,5 +1,9 @@
 /* ── Reset & Variables ─────────────────────────────────────────────────────── */
 
+html {
+  font-size: 107%; /* compensate for Space Grotesk's smaller x-height vs Inter */
+}
+
 :root {
   --bg: #0f1117;
   --bg-surface: #1a1d27;
@@ -25,7 +29,7 @@
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Space Grotesk', 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
   line-height: 1.5;
