@@ -64,7 +64,7 @@ export default function PolicyWizard({
         <h3>New Policy</h3>
         {placeName && <p className="site-city">{placeName}</p>}
         {clickLat !== null && clickLon !== null && (
-          <p className="site-distance">Lat {clickLat.toFixed(4)}, Lon {clickLon.toFixed(4)}</p>
+          <p className="site-distance">Lat {clickLat.toFixed(4)}°, Lon {clickLon.toFixed(4)}°</p>
         )}
       </div>
 

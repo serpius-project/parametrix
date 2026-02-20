@@ -70,11 +70,20 @@ body {
 }
 
 .header-logo {
-  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.5rem;
   font-weight: 700;
   color: var(--text);
   text-decoration: none;
   letter-spacing: -0.02em;
+  font-family: 'Space Grotesk', 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.header-logo-img {
+  height: 22px;
+  width: auto;
 }
 
 .header-nav {

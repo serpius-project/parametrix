@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import type { Site, WizardState, PremiumResponse } from '../../types'
 import { useHazards } from '../../hooks/useHazards'
 import { usePremium } from '../../hooks/usePremium'
-import { formatUsdc } from '../../utils/format'
+import { formatUsdc, formatUnit } from '../../utils/format'
 import Button from '../common/Button'
 
 interface StepConfigureProps {
@@ -38,7 +38,7 @@ export default function StepConfigure({
   const { hazards: hazardConfigs } = useHazards()
   const { premium, loading, error, calculate } = usePremium()
   const config = hazardConfigs[hazard]
-  const unit = config?.unit ?? ''
+  const unit = formatUnit(config?.unit ?? '')
 
   // Set default threshold on mount
   useEffect(() => {

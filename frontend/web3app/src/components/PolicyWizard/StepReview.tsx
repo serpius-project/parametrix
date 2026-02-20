@@ -2,7 +2,7 @@ import { useDynamicContext } from '@dynamic-labs/sdk-react-core'
 import type { WizardState } from '../../types'
 import { HAZARD_STRING_TO_ID } from '../../types'
 import { useBuyPolicy } from '../../hooks/usePolicyContract'
-import { formatUsdc } from '../../utils/format'
+import { formatUsdc, formatUnit } from '../../utils/format'
 import Button from '../common/Button'
 
 interface StepReviewProps {
@@ -62,7 +62,7 @@ export default function StepReview({ wizard, onBack, onComplete }: StepReviewPro
         </div>
         <div className="review-row">
           <span>Coordinates</span>
-          <span>Lat {wizard.clickLat?.toFixed(4)}, Lon {wizard.clickLon?.toFixed(4)}</span>
+          <span>Lat {wizard.clickLat?.toFixed(4)}°, Lon {wizard.clickLon?.toFixed(4)}°</span>
         </div>
         <div className="review-row">
           <span>Hazard</span>
@@ -70,7 +70,7 @@ export default function StepReview({ wizard, onBack, onComplete }: StepReviewPro
         </div>
         <div className="review-row">
           <span>Threshold</span>
-          <span>{wizard.threshold} {premium.unit}</span>
+          <span>{wizard.threshold} {formatUnit(premium.unit)}</span>
         </div>
         <div className="review-row">
           <span>Coverage</span>

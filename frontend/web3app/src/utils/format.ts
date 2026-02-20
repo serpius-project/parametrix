@@ -24,6 +24,16 @@ export const int32ToCoord = (val: number): number =>
 export const monthsToDays = (months: number): bigint =>
   BigInt(months * 30)
 
+/** Format a unit string for display (e.g. "m3/s" → "m³/s", "C" → "°C") */
+export const formatUnit = (unit: string): string =>
+  unit
+    .replace(/(\w)3/g, '$1³')
+    .replace(/^C$/, '°C')
+
+/** Clean up a hazard description for display (e.g. remove "D_mm") */
+export const formatDescription = (desc: string): string =>
+  desc.replace(/\s*D_mm\s*/g, ' ').replace(/\s{2,}/g, ' ').trim()
+
 /** Format a Unix timestamp to a readable date */
 export const formatDate = (timestamp: number): string =>
   new Date(timestamp * 1000).toLocaleDateString('en-US', {

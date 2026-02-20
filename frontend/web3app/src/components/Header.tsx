@@ -6,7 +6,8 @@ export default function Header() {
     <header className="header">
       <div className="header-left">
         <NavLink to="/" className="header-logo">
-          Parametrix
+          <img src="/logo.png" alt="prmtrix" className="header-logo-img" />
+          PRMTRIX
         </NavLink>
         <nav className="header-nav">
           <NavLink to="/" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')} end>

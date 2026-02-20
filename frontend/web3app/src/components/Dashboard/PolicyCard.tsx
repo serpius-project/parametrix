@@ -49,7 +49,7 @@ export default function PolicyCard({ policy, now }: PolicyCardProps) {
 
         <div className="policy-detail">
           <span>Location</span>
-          <span>Lat {lat.toFixed(4)}, Lon {lon.toFixed(4)}</span>
+          <span>Lat {lat.toFixed(4)}°, Lon {lon.toFixed(4)}°</span>
         </div>
 
         <div className="policy-detail">

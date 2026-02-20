@@ -1,4 +1,5 @@
 import { useHazards } from '../../hooks/useHazards'
+import { formatUnit, formatDescription } from '../../utils/format'
 
 const HAZARD_ICONS: Record<string, string> = {
   heatwave: 'fa-solid fa-temperature-high',
@@ -31,14 +32,15 @@ export default function StepSelectHazard({ hazards, onSelect }: StepSelectHazard
               {config && (
                 <div className="hazard-desc">
                   {(() => {
-                    const parenIdx = config.description.indexOf('(')
-                    const main = parenIdx >= 0 ? config.description.slice(0, parenIdx).trim() : config.description
-                    const detail = parenIdx >= 0 ? config.description.slice(parenIdx) : ''
+                    const cleaned = formatDescription(config.description)
+                    const parenIdx = cleaned.indexOf('(')
+                    const main = parenIdx >= 0 ? cleaned.slice(0, parenIdx).trim() : cleaned
+                    const detail = parenIdx >= 0 ? cleaned.slice(parenIdx) : ''
                     return (
                       <>
                         <span><strong>Description:</strong> {main}</span>
                         {detail && <span><strong>Measure:</strong> {detail}</span>}
-                        <span><strong>Units:</strong> {config.unit}</span>
+                        <span><strong>Units:</strong> {formatUnit(config.unit)}</span>
                       </>
                     )
                   })()}
