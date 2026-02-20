@@ -10,6 +10,7 @@ interface PolicyWizardProps {
   clickLat: number | null
   clickLon: number | null
   distanceKm: number | null
+  placeName: string | null
   onComplete: () => void
 }
 
@@ -18,6 +19,7 @@ export default function PolicyWizard({
   clickLat,
   clickLon,
   distanceKm,
+  placeName,
   onComplete,
 }: PolicyWizardProps) {
   const [step, setStep] = useState(0)
@@ -25,6 +27,7 @@ export default function PolicyWizard({
     site: null,
     clickLat: null,
     clickLon: null,
+    placeName: null,
     hazard: null,
     threshold: null,
     coverageUsdc: 10000,
@@ -58,10 +61,10 @@ export default function PolicyWizard({
   return (
     <div className="wizard-panel">
       <div className="wizard-site-info">
-        <h3>{selectedSite.name}</h3>
-        <p className="site-city">{selectedSite.city}</p>
-        {distanceKm !== null && (
-          <p className="site-distance">{distanceKm.toFixed(1)} km from selected point</p>
+        <h3>New Policy</h3>
+        {placeName && <p className="site-city">{placeName}</p>}
+        {clickLat !== null && clickLon !== null && (
+          <p className="site-distance">Lat {clickLat.toFixed(4)}, Lon {clickLon.toFixed(4)}</p>
         )}
       </div>
 
@@ -75,7 +78,7 @@ export default function PolicyWizard({
         <StepSelectHazard
           hazards={availableHazards}
           onSelect={(hazard) => {
-            setWizard((prev) => ({ ...prev, hazard, site: selectedSite, clickLat, clickLon }))
+            setWizard((prev) => ({ ...prev, hazard, site: selectedSite, clickLat, clickLon, placeName }))
             setStep(1)
           }}
         />

@@ -47,19 +47,22 @@ export default function StepConfigure({
     }
   }, [hazard]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Recalculate premium when params change
+  // Recalculate premium when params change (use clicked coordinates)
+  const lat = wizard.clickLat ?? site.lat
+  const lon = wizard.clickLon ?? site.lon
+
   useEffect(() => {
     if (wizard.threshold === null) return
     calculate({
-      lat: site.lat,
-      lon: site.lon,
+      lat,
+      lon,
       hazard,
       threshold: wizard.threshold,
       n_months: wizard.durationMonths,
       payout: wizard.coverageUsdc,
       loading_factor: 0.2,
     })
-  }, [site.lat, site.lon, hazard, wizard.threshold, wizard.durationMonths, wizard.coverageUsdc, calculate])
+  }, [lat, lon, hazard, wizard.threshold, wizard.durationMonths, wizard.coverageUsdc, calculate])
 
   return (
     <div className="wizard-step">
@@ -68,11 +71,19 @@ export default function StepConfigure({
       <div className="form-group">
         <label>
           Trigger Threshold ({unit})
-          <input
-            type="number"
-            value={wizard.threshold ?? ''}
-            onChange={(e) => onChange({ threshold: parseFloat(e.target.value) || 0 })}
-          />
+          <div className="number-input-wrapper">
+            <button type="button" className="number-btn" onClick={() => onChange({ threshold: (wizard.threshold ?? 0) - 1 })}>
+              <i className="fa-solid fa-minus" />
+            </button>
+            <input
+              type="number"
+              value={wizard.threshold ?? ''}
+              onChange={(e) => onChange({ threshold: parseFloat(e.target.value) || 0 })}
+            />
+            <button type="button" className="number-btn" onClick={() => onChange({ threshold: (wizard.threshold ?? 0) + 1 })}>
+              <i className="fa-solid fa-plus" />
+            </button>
+          </div>
         </label>
         {config && (
           <p className="form-hint">
@@ -86,13 +97,21 @@ export default function StepConfigure({
       <div className="form-group">
         <label>
           Max Coverage (USDC)
-          <input
-            type="number"
-            value={wizard.coverageUsdc}
-            min={100}
-            step={100}
-            onChange={(e) => onChange({ coverageUsdc: parseFloat(e.target.value) || 0 })}
-          />
+          <div className="number-input-wrapper">
+            <button type="button" className="number-btn" onClick={() => onChange({ coverageUsdc: Math.max(100, wizard.coverageUsdc - 100) })}>
+              <i className="fa-solid fa-minus" />
+            </button>
+            <input
+              type="number"
+              value={wizard.coverageUsdc}
+              min={100}
+              step={100}
+              onChange={(e) => onChange({ coverageUsdc: parseFloat(e.target.value) || 0 })}
+            />
+            <button type="button" className="number-btn" onClick={() => onChange({ coverageUsdc: wizard.coverageUsdc + 100 })}>
+              <i className="fa-solid fa-plus" />
+            </button>
+          </div>
         </label>
       </div>
 
@@ -124,9 +143,6 @@ export default function StepConfigure({
             </div>
             <div className="premium-details">
               <p>Exceedance probability: {(premium.exceedance_prob * 100).toFixed(2)}%/month</p>
-              <p>
-                Nearest site: {premium.site_name} ({premium.distance_km.toFixed(1)} km)
-              </p>
             </div>
           </div>
         )}

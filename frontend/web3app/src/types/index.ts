@@ -86,6 +86,7 @@ export interface WizardState {
   site: Site | null
   clickLat: number | null
   clickLon: number | null
+  placeName: string | null
   hazard: string | null
   threshold: number | null
   coverageUsdc: number

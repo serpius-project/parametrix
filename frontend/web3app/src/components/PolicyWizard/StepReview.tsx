@@ -33,8 +33,8 @@ export default function StepReview({ wizard, onBack, onComplete }: StepReviewPro
       coverageUsdc: wizard.coverageUsdc,
       premiumUsdc: premium.premium_usdc,
       triggerThreshold: wizard.threshold!,
-      lat: wizard.site!.lat,
-      lon: wizard.site!.lon,
+      lat: wizard.clickLat!,
+      lon: wizard.clickLon!,
     })
   }
 
@@ -57,12 +57,12 @@ export default function StepReview({ wizard, onBack, onComplete }: StepReviewPro
 
       <div className="review-summary">
         <div className="review-row">
-          <span>Site</span>
-          <span>{wizard.site?.name}</span>
+          <span>Location</span>
+          <span>{wizard.placeName ?? 'Selected point'}</span>
         </div>
         <div className="review-row">
-          <span>Location</span>
-          <span>{wizard.site?.city}</span>
+          <span>Coordinates</span>
+          <span>Lat {wizard.clickLat?.toFixed(4)}, Lon {wizard.clickLon?.toFixed(4)}</span>
         </div>
         <div className="review-row">
           <span>Hazard</span>

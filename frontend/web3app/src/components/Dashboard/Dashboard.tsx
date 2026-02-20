@@ -1,12 +1,15 @@
 import { useUserPolicies } from '../../hooks/useUserPolicies'
+import { useTransactionHistory } from '../../hooks/useTransactionHistory'
 import { useDynamicContext } from '@dynamic-labs/sdk-react-core'
 import PolicyCard from './PolicyCard'
+import TransactionHistory from './TransactionHistory'
 import Button from '../common/Button'
 import { useNavigate } from 'react-router-dom'
 
 export default function Dashboard() {
   const { primaryWallet, setShowAuthFlow } = useDynamicContext()
   const { policies, loading, error, refresh } = useUserPolicies()
+  const { events, loading: txLoading, error: txError } = useTransactionHistory()
   const navigate = useNavigate()
 
   if (!primaryWallet) {
@@ -57,6 +60,7 @@ export default function Dashboard() {
           <PolicyCard key={policy.id.toString()} policy={policy} now={now} />
         ))}
       </div>
+      <TransactionHistory events={events} loading={txLoading} error={txError} />
     </div>
   )
 }
