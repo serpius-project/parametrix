@@ -10,29 +10,21 @@ from scipy import integrate
 
 HAZARD_CONFIG = {
     "flood": {
-        "family": "weibull_min",
-        "param_names": ["c", "loc", "scale"],
         "direction": "high_is_bad",
         "unit": "m3/s",
         "description": "River discharge (monthly max)",
     },
     "heatwave": {
-        "family": "genextreme",
-        "param_names": ["c", "loc", "scale"],
         "direction": "high_is_bad",
         "unit": "C",
         "description": "Wet-bulb temperature (monthly max)",
     },
     "waterstress": {
-        "family": "logitnormal",
-        "param_names": ["mu", "sigma"],
         "direction": "low_is_bad",
         "unit": "m3/m3",
         "description": "Soil moisture (monthly mean)",
     },
     "drought": {
-        "family": "johnsonsu",
-        "param_names": ["a", "b", "loc", "scale"],
         "direction": "low_is_bad",
         "unit": "mm",
         "description": "Water deficit D_mm (precip - PET, mm/month)",

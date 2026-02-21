@@ -15,6 +15,7 @@ import uvicorn
 
 from main import (
     calculate_premium,
+    calculate_threshold,
     check_event_and_payout,
     simulate_event_and_payout,
 )
@@ -46,7 +47,7 @@ class PremiumRequest(BaseModel):
     lat: float = Field(..., description="Latitude of the location", ge=-90, le=90)
     lon: float = Field(..., description="Longitude of the location", ge=-180, le=180)
     hazard: str = Field(..., description="Hazard type: flood, heatwave, waterstress, or drought")
-    threshold: float = Field(..., description="Trigger threshold in physical units", gt=0)
+    threshold: float = Field(..., description="Trigger threshold in physical units")
     n_months: int = Field(12, description="Coverage period in months", ge=1, le=120)
     payout: float = Field(10000.0, description="Payout in USDC if triggered", gt=0)
     loading_factor: float = Field(0.20, description="Insurer markup (0.20 = 20%)", ge=0, le=1.0)
@@ -65,12 +66,35 @@ class PremiumRequest(BaseModel):
         }
 
 
+class ThresholdRequest(BaseModel):
+    """Request model for threshold calculation from exceedance probability."""
+    lat: float = Field(..., description="Latitude of the location", ge=-90, le=90)
+    lon: float = Field(..., description="Longitude of the location", ge=-180, le=180)
+    hazard: str = Field(..., description="Hazard type: flood, heatwave, waterstress, or drought")
+    exceedance_prob: float = Field(
+        ...,
+        description="Desired monthly exceedance probability (0 < p < 1). "
+                    "E.g. 0.10 means the threshold is breached 10% of months on average.",
+        gt=0, lt=1,
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "lat": 40.07,
+                "lon": -82.78,
+                "hazard": "flood",
+                "exceedance_prob": 0.10,
+            }
+        }
+
+
 class CheckEventRequest(BaseModel):
     """Request model for checking real event."""
     lat: float = Field(..., description="Latitude of the location", ge=-90, le=90)
     lon: float = Field(..., description="Longitude of the location", ge=-180, le=180)
     hazard: str = Field(..., description="Hazard type: flood, heatwave, waterstress, or drought")
-    threshold: float = Field(..., description="Trigger threshold in physical units", gt=0)
+    threshold: float = Field(..., description="Trigger threshold in physical units")
     payout: float = Field(..., description="Payout in USDC if triggered", gt=0)
     lookback_months: int = Field(3, description="Months to look back for data", ge=1, le=12)
 
@@ -92,7 +116,7 @@ class SimulateEventRequest(BaseModel):
     lat: float = Field(..., description="Latitude of the location", ge=-90, le=90)
     lon: float = Field(..., description="Longitude of the location", ge=-180, le=180)
     hazard: str = Field(..., description="Hazard type: flood, heatwave, waterstress, or drought")
-    threshold: float = Field(..., description="Trigger threshold in physical units", gt=0)
+    threshold: float = Field(..., description="Trigger threshold in physical units")
     payout: float = Field(..., description="Payout in USDC if triggered", gt=0)
     force_trigger: bool = Field(True, description="Force the simulated value to breach threshold")
     date_str: Optional[str] = Field(None, description="Override simulated date (YYYY-MM-DD format)")
@@ -123,6 +147,7 @@ async def root():
         "name": "Parametrix Climate Risk Insurance API",
         "version": "1.0.0",
         "endpoints": {
+            "POST /threshold": "Compute trigger threshold from a desired exceedance probability",
             "POST /premium": "Calculate insurance premium",
             "POST /check-event": "Check real observation and evaluate payout",
             "POST /simulate-event": "Simulate event and evaluate payout",
@@ -171,6 +196,31 @@ async def get_sites():
         raise HTTPException(status_code=500, detail="Site parameters file not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error loading sites: {str(e)}")
+
+
+@app.post("/threshold")
+async def calculate_threshold_endpoint(request: ThresholdRequest):
+    """
+    Return the trigger threshold (in physical units) that corresponds to a
+    desired monthly exceedance probability for the nearest site and hazard.
+
+    For high_is_bad hazards (flood, heatwave): P[X > threshold] = exceedance_prob
+    For low_is_bad hazards (waterstress, drought): P[X < threshold] = exceedance_prob
+    """
+    try:
+        result = calculate_threshold(
+            lat=request.lat,
+            lon=request.lon,
+            hazard=request.hazard,
+            exceedance_prob=request.exceedance_prob,
+        )
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 
 @app.post("/premium")

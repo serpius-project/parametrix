@@ -38,7 +38,12 @@ class LogitNormalDist:
 
 
 def build_distribution(family: str, params: dict):
-    """Reconstruct a frozen scipy distribution from stored parameters."""
+    """Reconstruct a frozen scipy distribution from stored parameters.
+
+    Supports all families that can appear in site_parameters.json:
+        genextreme, weibull_min, logitnormal, johnsonsu,
+        lognorm, gamma, norm, gumbel_r, gumbel_l
+    """
     if family == "genextreme":
         return stats.genextreme(c=params["c"], loc=params["loc"], scale=params["scale"])
     elif family == "weibull_min":
@@ -47,5 +52,15 @@ def build_distribution(family: str, params: dict):
         return LogitNormalDist(mu=params["mu"], sigma=params["sigma"])
     elif family == "johnsonsu":
         return stats.johnsonsu(a=params["a"], b=params["b"], loc=params["loc"], scale=params["scale"])
+    elif family == "lognorm":
+        return stats.lognorm(s=params["s"], loc=params["loc"], scale=params["scale"])
+    elif family == "gamma":
+        return stats.gamma(a=params["a"], loc=params["loc"], scale=params["scale"])
+    elif family == "norm":
+        return stats.norm(loc=params["loc"], scale=params["scale"])
+    elif family == "gumbel_r":
+        return stats.gumbel_r(loc=params["loc"], scale=params["scale"])
+    elif family == "gumbel_l":
+        return stats.gumbel_l(loc=params["loc"], scale=params["scale"])
     else:
-        raise ValueError(f"Unknown distribution family: {family}")
+        raise ValueError(f"Unknown distribution family: '{family}'")
