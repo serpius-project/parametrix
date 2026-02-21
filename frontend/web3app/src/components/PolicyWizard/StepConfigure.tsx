@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Site, WizardState, PremiumResponse } from '../../types'
 import { useHazards } from '../../hooks/useHazards'
 import { usePremium } from '../../hooks/usePremium'
@@ -156,13 +156,22 @@ export default function StepConfigure({
   const nMonths = wizard.durationMonths
   const pCumulative = pMonth !== null ? 1 - Math.pow(1 - pMonth, nMonths) : null
 
+  // Scroll fade indicator
+  const [scrolledBottom, setScrolledBottom] = useState(false)
+  const onBodyScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 8
+    setScrolledBottom(atBottom)
+  }, [])
+
   return (
-    <div className="wizard-step">
+    <div className="wizard-step wizard-step--scrollable">
       <h3>Configure Policy</h3>
 
+      <div className={`wizard-step-body-wrapper${scrolledBottom ? ' scrolled-bottom' : ''}`}>
+      <div className="wizard-step-body" onScroll={onBodyScroll}>
       {/* Tier presets */}
       <div className="form-group">
-        <label>Policy Tier</label>
         <div className="tier-presets">
           {TIERS.map((tier) => {
             const result = tiers[tier.key]
@@ -186,7 +195,6 @@ export default function StepConfigure({
                 {isLoading && <div className="tier-spinner"><i className="fa-solid fa-spinner fa-spin" /></div>}
                 {result && !isLoading && (
                   <div className="tier-result">
-                    <span>{(result.exceedanceProb * 100).toFixed(1)}%/mo</span>
                     <span>${formatUsdc(result.premiumUsdc)}</span>
                   </div>
                 )}
@@ -196,52 +204,54 @@ export default function StepConfigure({
         </div>
       </div>
 
-      <div className="form-group">
-        <label>
-          Trigger Threshold ({unit})
-          <div className="number-input-wrapper">
-            <button type="button" className="number-btn" onClick={() => onChange({ threshold: (wizard.threshold ?? 0) - 1 })}>
-              <i className="fa-solid fa-minus" />
-            </button>
-            <input
-              type="number"
-              value={wizard.threshold ?? ''}
-              onChange={(e) => onChange({ threshold: parseFloat(e.target.value) || 0 })}
-            />
-            <button type="button" className="number-btn" onClick={() => onChange({ threshold: (wizard.threshold ?? 0) + 1 })}>
-              <i className="fa-solid fa-plus" />
-            </button>
-          </div>
-        </label>
-        {config && (
-          <p className="form-hint">
-            {config.direction === 'high_is_bad'
-              ? `Payout triggers when value exceeds this threshold`
-              : `Payout triggers when value drops below this threshold`}
-          </p>
-        )}
-      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label>
+            Trigger ({unit})
+            <div className="number-input-wrapper">
+              <button type="button" className="number-btn" onClick={() => onChange({ threshold: (wizard.threshold ?? 0) - 1 })}>
+                <i className="fa-solid fa-minus" />
+              </button>
+              <input
+                type="number"
+                value={wizard.threshold ?? ''}
+                onChange={(e) => onChange({ threshold: parseFloat(e.target.value) || 0 })}
+              />
+              <button type="button" className="number-btn" onClick={() => onChange({ threshold: (wizard.threshold ?? 0) + 1 })}>
+                <i className="fa-solid fa-plus" />
+              </button>
+            </div>
+          </label>
+        </div>
 
-      <div className="form-group">
-        <label>
-          Max Coverage (USDC)
-          <div className="number-input-wrapper">
-            <button type="button" className="number-btn" onClick={() => onChange({ coverageUsdc: Math.max(100, wizard.coverageUsdc - 100) })}>
-              <i className="fa-solid fa-minus" />
-            </button>
-            <input
-              type="number"
-              value={wizard.coverageUsdc}
-              min={100}
-              step={100}
-              onChange={(e) => onChange({ coverageUsdc: parseFloat(e.target.value) || 0 })}
-            />
-            <button type="button" className="number-btn" onClick={() => onChange({ coverageUsdc: wizard.coverageUsdc + 100 })}>
-              <i className="fa-solid fa-plus" />
-            </button>
-          </div>
-        </label>
+        <div className="form-group">
+          <label>
+            Coverage (USDC)
+            <div className="number-input-wrapper">
+              <button type="button" className="number-btn" onClick={() => onChange({ coverageUsdc: Math.max(100, wizard.coverageUsdc - 100) })}>
+                <i className="fa-solid fa-minus" />
+              </button>
+              <input
+                type="number"
+                value={wizard.coverageUsdc}
+                min={100}
+                step={100}
+                onChange={(e) => onChange({ coverageUsdc: parseFloat(e.target.value) || 0 })}
+              />
+              <button type="button" className="number-btn" onClick={() => onChange({ coverageUsdc: wizard.coverageUsdc + 100 })}>
+                <i className="fa-solid fa-plus" />
+              </button>
+            </div>
+          </label>
+        </div>
       </div>
+      {config && (
+        <p className="form-hint" style={{ marginBottom: '16px' }}>
+          {config.direction === 'high_is_bad'
+            ? `Payout triggers when value exceeds the threshold`
+            : `Payout triggers when value drops below the threshold`}
+        </p>
+      )}
 
       <div className="form-group">
         <label>
@@ -270,6 +280,8 @@ export default function StepConfigure({
             </div>
           </div>
         )}
+      </div>
+      </div>
       </div>
 
       <div className="wizard-actions">
