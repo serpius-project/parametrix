@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { Site, WizardState, PremiumResponse } from '../../types'
 import { useHazards } from '../../hooks/useHazards'
 import { usePremium } from '../../hooks/usePremium'
+import { useTierSearch, type TierDef } from '../../hooks/useTierSearch'
 import { formatUsdc, formatUnit } from '../../utils/format'
 import Button from '../common/Button'
 
@@ -20,6 +21,14 @@ const DEFAULT_THRESHOLDS: Record<string, number> = {
   flood: 500,
   drought: 2,
 }
+
+const TIERS = [
+  { key: 'budget', name: 'Budget', subtitle: 'Catastrophic', quantile: 0.05 / 6, icon: 'fa-solid fa-shield', recommended: true },
+  { key: 'balanced', name: 'Balanced', subtitle: 'Moderate', quantile: 0.40 / 6, icon: 'fa-solid fa-shield-halved', recommended: false },
+  { key: 'protection', name: 'Protection+', subtitle: 'Sensitive', quantile: 0.85 / 6, icon: 'fa-solid fa-shield-heart', recommended: false },
+] as const
+
+const TIER_DEFS: TierDef[] = TIERS.map((t) => ({ key: t.key, quantile: t.quantile }))
 
 function DurationSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const trackRef = useRef<HTMLDivElement>(null)
@@ -85,17 +94,49 @@ export default function StepConfigure({
   const { premium, loading, error, calculate } = usePremium()
   const config = hazardConfigs[hazard]
   const unit = formatUnit(config?.unit ?? '')
-
-  // Set default threshold on mount
-  useEffect(() => {
-    if (wizard.threshold === null) {
-      onChange({ threshold: DEFAULT_THRESHOLDS[hazard] ?? 35 })
-    }
-  }, [hazard]) // eslint-disable-line react-hooks/exhaustive-deps
+  const direction = config?.direction ?? 'high_is_bad'
 
   // Recalculate premium when params change (use clicked coordinates)
   const lat = wizard.clickLat ?? site.lat
   const lon = wizard.clickLon ?? site.lon
+
+  // Tier search
+  const tierParams = useMemo(
+    () => ({
+      lat,
+      lon,
+      hazard,
+      n_months: wizard.durationMonths,
+      payout: wizard.coverageUsdc,
+      loading_factor: 0.2,
+      direction,
+    }),
+    [lat, lon, hazard, wizard.durationMonths, wizard.coverageUsdc, direction],
+  )
+
+  const { tiers, loading: tierLoading, searchAll } = useTierSearch(tierParams)
+
+  // Auto-search all tiers on mount / when params change
+  useEffect(() => {
+    if (!config) return
+    void searchAll(TIER_DEFS)
+  }, [tierParams, config, searchAll])
+
+  // Set threshold from recommended tier on first load, fallback to default
+  const appliedDefaultRef = useRef<string | null>(null)
+  const recommendedTier = TIERS.find((t) => t.recommended)!
+  const recommendedResult = tiers[recommendedTier.key]
+
+  useEffect(() => {
+    if (appliedDefaultRef.current === hazard) return
+    if (recommendedResult) {
+      onChange({ threshold: recommendedResult.threshold })
+      appliedDefaultRef.current = hazard
+    } else if (wizard.threshold === null) {
+      // Temporary default while tier search is in progress
+      onChange({ threshold: DEFAULT_THRESHOLDS[hazard] ?? 35 })
+    }
+  }, [hazard, recommendedResult]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (wizard.threshold === null) return
@@ -110,9 +151,50 @@ export default function StepConfigure({
     })
   }, [lat, lon, hazard, wizard.threshold, wizard.durationMonths, wizard.coverageUsdc, calculate])
 
+  // Cumulative probability for the selected period
+  const pMonth = premium?.exceedance_prob ?? null
+  const nMonths = wizard.durationMonths
+  const pCumulative = pMonth !== null ? 1 - Math.pow(1 - pMonth, nMonths) : null
+
   return (
     <div className="wizard-step">
       <h3>Configure Policy</h3>
+
+      {/* Tier presets */}
+      <div className="form-group">
+        <label>Policy Tier</label>
+        <div className="tier-presets">
+          {TIERS.map((tier) => {
+            const result = tiers[tier.key]
+            const isLoading = tierLoading[tier.key]
+            const isActive = result && wizard.threshold !== null && Math.abs(wizard.threshold - result.threshold) < 0.05
+            return (
+              <button
+                key={tier.key}
+                type="button"
+                className={`tier-card${isActive ? ' active' : ''}${isLoading ? ' loading' : ''}${tier.recommended ? ' recommended' : ''}`}
+                disabled={isLoading}
+                onClick={() => {
+                  if (result) {
+                    onChange({ threshold: result.threshold })
+                  }
+                }}
+              >
+                <div className="tier-icon"><i className={tier.icon} /></div>
+                <div className="tier-name">{tier.name}</div>
+                <div className="tier-subtitle">{tier.subtitle}</div>
+                {isLoading && <div className="tier-spinner"><i className="fa-solid fa-spinner fa-spin" /></div>}
+                {result && !isLoading && (
+                  <div className="tier-result">
+                    <span>{(result.exceedanceProb * 100).toFixed(1)}%/mo</span>
+                    <span>${formatUsdc(result.premiumUsdc)}</span>
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
 
       <div className="form-group">
         <label>
@@ -180,6 +262,11 @@ export default function StepConfigure({
             </div>
             <div className="premium-details">
               <p>Exceedance probability: {(premium.exceedance_prob * 100).toFixed(2)}%/month</p>
+              {pCumulative !== null && (
+                <p className="premium-cumulative">
+                  Estimated payout probability: {(pCumulative * 100).toFixed(1)}%
+                </p>
+              )}
             </div>
           </div>
         )}
