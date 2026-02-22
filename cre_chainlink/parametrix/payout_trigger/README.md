@@ -53,12 +53,15 @@ A user buys a parametric insurance policy via the frontend or directly on-chain.
 
 ### 2. Continuous Monitoring (Cron)
 On a configurable cron schedule, the workflow:
-1. Reads all policies from `PolicyManager` (iterates `1..nextId`)
-2. Filters to **active** policies (not paid out, not expired)
-3. For each active policy, fetches weather data directly from Open-Meteo
-4. Aggregates daily data to monthly values (max, mean, or Thornthwaite PET deficit)
-5. DON nodes each call Open-Meteo independently; results are aggregated via **median consensus**
-6. If the trigger condition is met → calls `triggerPayout()` on-chain
+1. Reads `nextId` from `PolicyManager` to discover how many policies exist (1 EVM read)
+2. Scans a **rotating window** of policy IDs (up to 9 per cycle, respecting the 10-read quota)
+3. Filters to **active** policies (not paid out, not expired)
+4. Groups active policies by **(lat, lon, hazard)** — policies at the same location and hazard type share one weather fetch
+5. Fetches weather data for up to **5 groups** per cycle (respecting the 5 HTTP call quota), rotating through remaining groups on subsequent cycles
+6. Aggregates daily data to monthly values (max, mean, or Thornthwaite PET deficit)
+7. DON nodes each call Open-Meteo independently; results are aggregated via **median consensus**
+8. Evaluates every policy in each group against its own trigger threshold
+9. If the trigger condition is met → calls `triggerPayout()` on-chain
 
 ### 3. Payout Execution
 When a policy is triggered:
@@ -181,13 +184,14 @@ Example simulation output:
 Starting policy check...
 Next policy ID: 3
 Found 2 active policies
-Checking policy 1: hazard=heatwave, location=(39.5, -119.8), threshold=35
+Grouped into 1 unique (location, hazard) groups
+Processing 1 groups starting at offset 0 of 1 total (cycle 14732)
+Fetching weather for group 39.5,-119.8,heatwave (2 policies, hazard=heatwave)
 Policy 1: triggered=false, value=8.2, threshold=35
-Checking policy 2: hazard=heatwave, location=(39.5, -119.8), threshold=35
 Policy 2: triggered=true, value=42.1, threshold=35
 Policy 2 TRIGGERED! Observed 42.1 (threshold: 35). Initiating payout...
 Payout triggered successfully at txHash: 0x...
-Checked 2 policies, triggered 1 payouts
+Checked 2/2 policies (1 HTTP calls), triggered 1 payouts
 ```
 
 > **Note**: `cre workflow simulate` runs the workflow logic locally but does NOT submit actual on-chain transactions (you'll see "Skipping WorkflowEngineV2"). To execute real payouts, deploy to a Chainlink DON.
@@ -231,14 +235,60 @@ event PolicyExpiredReleased(
 );
 ```
 
+## CRE Service Quota Management
+
+The biggest engineering challenge we faced building on CRE was working within the **per-execution service quotas**. CRE enforces strict resource limits on every workflow execution — and unlike a traditional backend, the runtime is **stateless** (no `localStorage`, no persistent variables between executions). This meant we couldn't simply "remember where we left off" and had to design a purely time-based rotation strategy.
+
+### The quotas that constrain us
+
+| Quota | Limit | What consumes it |
+|-------|-------|------------------|
+| **EVM reads** (`ChainRead.CallLimit`) | 10 per execution | 1 for `nextId()` + 1 per policy scanned via `policies(id)` |
+| **HTTP calls** (`HTTPAction.CallLimit`) | 5 per execution | 1 per unique (location, hazard) weather fetch from Open-Meteo |
+| **Execution timeout** | 5 minutes | End-to-end, including all contract reads, HTTP calls, and writes |
+
+### The problem
+
+A naive implementation makes **1 HTTP call per active policy**. With 6 policies we hit the 5-call limit. Worse, reading policy data from the contract costs **1 EVM read per policy** — with 10+ policies we'd blow the 10-read quota before even checking the weather.
+
+### Our solution: grouping + rotating windows
+
+We apply three optimizations that work together:
+
+1. **Drop unnecessary contract reads** — The original workflow fetched `holderOf(id)` for each policy (2 reads per policy). Since the holder address isn't needed for trigger evaluation, we removed it, cutting EVM reads from `1 + 2N` to `1 + N`. This allows scanning up to **9 policies per cycle**.
+
+2. **Group policies by (lat, lon, hazard)** — Multiple policies at the same location with the same hazard type share identical weather data. One Open-Meteo fetch serves the entire group; each policy is then evaluated against its own trigger threshold locally.
+
+3. **Time-based rotating windows** — Since CRE is stateless, we derive a rotation offset from `Date.now()` divided by the cron interval (parsed from the config schedule). This gives each execution a different "window" into both the policy ID space and the HTTP group space:
+
+4. **Minimum premium enforcement** — A 10 USDC minimum premium is enforced on the frontend, economically discouraging micro-policies and reducing the total number of active policies the workflow needs to monitor. Fewer policies means less pressure on both the EVM read and HTTP call budgets per execution.
+
+```
+EVM read window:  cycleIndex = floor(now / cronInterval)
+                  windowIndex = cycleIndex % ceil(totalPolicies / 9)
+                  scan policies [windowIndex*9 + 1 .. windowIndex*9 + 9]
+
+HTTP call window: offset = (cycleIndex % ceil(totalGroups / 5)) * 5
+                  fetch groups [offset .. offset+5]
+```
+
+With a 2-minute cron, all policies are checked within `ceil(N/9) * 2` minutes, and all weather groups within `ceil(G/5) * 2` minutes. For 20 policies across 8 locations, full coverage takes ~6 minutes (3 cron cycles).
+
+### Why this was challenging
+
+- **No persistent state**: We can't store "last processed index" between runs. The rotation must be deterministic and derived purely from the current timestamp.
+- **Quotas interact**: EVM reads limit how many policies we discover, HTTP calls limit how many we can check, and both rotate independently. The workflow must stay within *all* limits simultaneously.
+- **DON consensus adds constraints**: Each HTTP call runs on every DON node independently. We can't batch multiple locations into one API call because the consensus aggregation (`median`) operates per-call.
+- **Cron interval matters**: A `*/2` schedule means the `cycleIndex` only increments on even minutes. The rotation logic must account for the actual cron interval to avoid always landing on the same window.
+
 ## CRE SDK Capabilities Used
 
 | Capability | Usage |
 |------------|-------|
 | `CronCapability` | Periodic policy monitoring on configurable schedule |
 | `EVMClient.logTrigger` | React to `PolicyPurchased` events in real-time |
-| `EVMClient.callContract` | Read policy data from chain (`policies()`, `holderOf()`, `nextId()`) |
-| `HTTPClient.sendRequest` | Fetch weather data from Open-Meteo with DON consensus via median |
+| `EVMClient.callContract` | Read policy data from chain (`policies()`, `nextId()`) — budget: 10 per execution |
+| `HTTPClient.sendRequest` | Fetch weather data from Open-Meteo with DON consensus via median — budget: 5 per execution |
 | `EVMClient.writeReport` | Submit `triggerPayout()` transaction with DON-signed report |
 | `runtime.report()` | Generate consensus report for on-chain verification |
 

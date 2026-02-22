@@ -276,6 +276,9 @@ export default function StepConfigure({
                 </p>
               )}
             </div>
+            {premium.premium_usdc < 10 && (
+              <p className="premium-error">Minimum premium is 10 USDC. Increase coverage or duration.</p>
+            )}
           </div>
         )}
       </div>
@@ -287,7 +290,7 @@ export default function StepConfigure({
           Back
         </Button>
         <Button
-          disabled={!premium || loading}
+          disabled={!premium || loading || (premium && premium.premium_usdc < 10)}
           onClick={() => {
             if (premium) onNext(premium)
           }}

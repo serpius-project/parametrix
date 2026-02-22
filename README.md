@@ -12,7 +12,7 @@ Parametrix provides parametric insurance for data centers and the lenders financ
 
 2. **Automated monitoring** — A Chainlink CRE workflow runs on a cron schedule (every 2 minutes in staging). It reads all active policies from the smart contract, including each policy's geographic coordinates, hazard type, and trigger threshold.
 
-3. **Weather data retrieval** — For each active policy, the CRE workflow calls the Open-Meteo public API directly with the policy's lat/lon and hazard type. Each DON node fetches weather data independently, aggregates daily observations to monthly values, and evaluates the trigger condition. Results are verified via DON median consensus.
+3. **Weather data retrieval** — The CRE workflow groups active policies by (location, hazard) and fetches weather data from Open-Meteo for each unique group. Each DON node fetches independently, aggregates daily observations to monthly values, and evaluates the trigger condition. Results are verified via DON median consensus. Every policy in a group is evaluated against its own trigger threshold.
 
 4. **Payout execution** — If the trigger condition is met (e.g., temperature exceeds 35°C for a heatwave policy), the CRE workflow submits a `triggerPayout` transaction on-chain. The UnderwriterVault releases funds to the policyholder using a pro-rata model when multiple policies are active.
 
@@ -114,12 +114,14 @@ Workflow compiled
 2026-02-17T19:55:04Z [USER LOG] Starting policy check...
 2026-02-17T19:55:04Z [USER LOG] Next policy ID: 2
 2026-02-17T19:55:05Z [USER LOG] Found 1 active policies
-2026-02-17T19:55:05Z [USER LOG] Checking policy 1: hazard=heatwave, location=(39.5157, -119.4713), threshold=35
+2026-02-17T19:55:05Z [USER LOG] Grouped into 1 unique (location, hazard) groups
+2026-02-17T19:55:05Z [USER LOG] Processing 1 groups starting at offset 0 of 1 total (cycle 14732)
+2026-02-17T19:55:05Z [USER LOG] Fetching weather for group 39.5157,-119.4713,heatwave (1 policies, hazard=heatwave)
 2026-02-17T19:55:05Z [USER LOG] Policy 1: triggered=false, value=8.2, threshold=35
-Workflow Simulation Result: "Checked 1 policies, triggered 0 payouts"
+Workflow Simulation Result: "Checked 1/1 policies (1 HTTP calls), triggered 0 payouts"
 ```
 
-The workflow reads the policy from the blockchain, fetches weather data from Open-Meteo, and evaluates the trigger. In this example, the observed temperature (8.2°C) is below the 35°C heatwave threshold, so no payout is triggered.
+The workflow reads the policy from the blockchain, groups it by location and hazard, fetches weather data from Open-Meteo, and evaluates the trigger. In this example, the observed temperature (8.2°C) is below the 35°C heatwave threshold, so no payout is triggered.
 
 ---
 
@@ -130,6 +132,32 @@ The workflow reads the policy from the blockchain, fetches weather data from Ope
 | 0 | Heatwave | Wet-bulb temperature | °C |
 | 1 | Flood | River discharge | m³/s |
 | 2 | Drought | Water deficit | mm |
+
+---
+
+## Challenges: Building on CRE
+
+The biggest engineering challenge was designing the CRE workflow to operate within the **per-execution service quotas** — particularly the 5 HTTP calls and 10 EVM reads per execution — while the runtime is completely **stateless** (no persistent storage between runs).
+
+### The problem
+
+A parametric insurance system needs to monitor *every* active policy on a regular schedule. Each policy requires reading its data from the blockchain (1 EVM read) and fetching weather data for its location (1 HTTP call). With just 6 policies, the naive approach exceeds the 5-call HTTP limit; with 10+ policies, it exceeds the 10-call EVM read limit.
+
+### Our solution
+
+We designed a **quota-aware scheduling algorithm** with three layers:
+
+1. **Eliminate redundant reads** — Removed the `holderOf()` contract call (not needed for trigger evaluation), cutting EVM reads from 2 per policy to 1. This allows scanning up to 9 policies per cycle within the 10-read budget.
+
+2. **Group by (location, hazard)** — Policies at the same coordinates with the same hazard share one weather fetch. The observed value is then evaluated against each policy's individual threshold locally, with zero extra API calls.
+
+3. **Time-based rotating windows** — Since CRE has no persistent state (`localStorage` is explicitly unavailable in the WASM runtime), we derive a deterministic rotation offset from `Date.now()` divided by the cron interval. Each execution scans a different window of policy IDs and weather groups, guaranteeing full coverage across multiple cron cycles.
+
+The rotation offset is computed from the config's cron schedule (parsed at runtime), so it works correctly regardless of whether the cron fires every 30 seconds or every 5 minutes.
+
+4. **Minimum premium enforcement** — A 10 USDC minimum premium is enforced on the frontend to economically discourage micro-policies. Fewer total policies means less pressure on the per-execution EVM read and HTTP call budgets, giving the rotation algorithm more headroom.
+
+See [`cre_chainlink/parametrix/payout_trigger/README.md`](cre_chainlink/parametrix/payout_trigger/README.md#cre-service-quota-management) for the full technical breakdown with code examples.
 
 ---
 
