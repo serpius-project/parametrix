@@ -40,6 +40,25 @@ const configSchema = z.object({
 type Config = z.infer<typeof configSchema>
 
 // ==============================================================================
+// CRE SERVICE QUOTAS — https://docs.chain.link/cre/service-quotas
+// ==============================================================================
+
+const MAX_HTTP_CALLS = 5   // PerWorkflow.HTTPAction.CallLimit
+const MAX_EVM_READS = 10   // PerWorkflow.ChainRead.CallLimit
+
+// Parse the cron interval (in minutes) from a schedule string.
+// E.g. "*/2 * * * *" returns 2, "* * * * *" returns 1.
+const parseCronInterval = (schedule: string): number => {
+	const parts = schedule.trim().split(/\s+/)
+	if (parts.length < 5) return 1
+	const minuteField = parts[0]
+	if (minuteField === '*') return 1
+	const stepMatch = minuteField.match(/^\*\/(\d+)$/)
+	if (stepMatch) return Math.max(1, parseInt(stepMatch[1], 10))
+	return 1 // conservative fallback
+}
+
+// ==============================================================================
 // TYPES
 // ==============================================================================
 
@@ -92,7 +111,6 @@ interface Policy {
 	premium: bigint
 	triggerThreshold: number
 	paid: boolean
-	holder: Address
 }
 
 // Consensus-compatible result from Open-Meteo weather data.
@@ -388,11 +406,33 @@ const getActivePolicies = (runtime: Runtime<Config>): Policy[] => {
 
 	runtime.log(`Next policy ID: ${nextId.toString()}`)
 
-	// Fetch all policies
+	const totalPolicies = Number(nextId) - 1 // policy IDs are 1-based
+	const maxPolicyScan = MAX_EVM_READS - 1  // reserve 1 read for nextId
+
+	// Rotating scan window: when there are more policies than we can read
+	// in one execution, scan a different window each cron cycle.
+	let scanStart = 1
+	let scanEnd = Number(nextId)
+
+	if (totalPolicies > maxPolicyScan) {
+		const cronInterval = parseCronInterval(runtime.config.schedule)
+		const cycleIndex = Math.floor(Date.now() / (cronInterval * 60000))
+		const numWindows = Math.ceil(totalPolicies / maxPolicyScan)
+		const windowIndex = cycleIndex % numWindows
+
+		scanStart = windowIndex * maxPolicyScan + 1
+		scanEnd = Math.min(scanStart + maxPolicyScan, Number(nextId))
+
+		runtime.log(
+			`Scanning policy IDs ${scanStart}..${scanEnd - 1} ` +
+			`(window ${windowIndex + 1}/${numWindows}, ${maxPolicyScan} max per cycle)`,
+		)
+	}
+
 	const policies: Policy[] = []
 	const currentTime = Math.floor(Date.now() / 1000)
 
-	for (let id = 1; id < Number(nextId); id++) {
+	for (let id = scanStart; id < scanEnd; id++) {
 		try {
 			// Fetch policy data
 			const policyCallData = encodeFunctionData({
@@ -418,30 +458,6 @@ const getActivePolicies = (runtime: Runtime<Config>): Policy[] => {
 				data: bytesToHex(policyResponse.data),
 			})
 
-			// Fetch holder
-			const holderCallData = encodeFunctionData({
-				abi: PolicyManager,
-				functionName: 'holderOf',
-				args: [BigInt(id)],
-			})
-
-			const holderResponse = evmClient
-				.callContract(runtime, {
-					call: encodeCallMsg({
-						from: zeroAddress,
-						to: evmConfig.policyManagerAddress as Address,
-						data: holderCallData,
-					}),
-					blockNumber: LAST_FINALIZED_BLOCK_NUMBER,
-				})
-				.result()
-
-			const holder = decodeFunctionResult({
-				abi: PolicyManager,
-				functionName: 'holderOf',
-				data: bytesToHex(holderResponse.data),
-			})
-
 			// Destructure policy data: hazard, start, end, lat, lon, maxCoverage, premium, triggerThreshold, paid
 			const [hazard, start, end, lat, lon, maxCoverage, premium, triggerThreshold, paid] = policyData
 
@@ -461,13 +477,12 @@ const getActivePolicies = (runtime: Runtime<Config>): Policy[] => {
 					hazardName,
 					start: Number(start),
 					end: Number(end),
-					lat: Number(lat) / 10000, // Convert from int32 × 10000 to decimal degrees
+					lat: Number(lat) / 10000, // Convert from int32 x 10000 to decimal degrees
 					lon: Number(lon) / 10000,
 					maxCoverage,
 					premium,
 					triggerThreshold: Number(triggerThreshold),
 					paid,
-					holder: holder as Address,
 				})
 			}
 		} catch (error) {
@@ -544,8 +559,13 @@ const triggerPayout = (
 	return bytesToHex(txHash)
 }
 
+// Create a deterministic grouping key for policies that can share weather data.
+const policyGroupKey = (p: Policy): string =>
+	`${p.lat},${p.lon},${p.hazardName}`
+
 /**
- * Main policy checking logic — fetches weather from Open-Meteo for each active policy
+ * Main policy checking logic — fetches weather from Open-Meteo for each
+ * unique (location, hazard) group and evaluates every policy in that group.
  */
 const checkPoliciesAndTriggerPayouts = (runtime: Runtime<Config>): string => {
 	runtime.log('Starting policy check...')
@@ -558,22 +578,66 @@ const checkPoliciesAndTriggerPayouts = (runtime: Runtime<Config>): string => {
 		return 'No active policies to check'
 	}
 
+	// Group policies by (lat, lon, hazard) to minimise HTTP calls
+	const groups = new Map<string, Policy[]>()
+	for (const policy of activePolicies) {
+		const key = policyGroupKey(policy)
+		const arr = groups.get(key)
+		if (arr) {
+			arr.push(policy)
+		} else {
+			groups.set(key, [policy])
+		}
+	}
+
+	const groupKeys = Array.from(groups.keys()).sort() // sort for deterministic order
+	const totalGroups = groupKeys.length
+	runtime.log(`Grouped into ${totalGroups} unique (location, hazard) groups`)
+
+	// Rotate which groups are fetched each cycle so every group gets checked.
+	// Derive a cycle counter from time and the cron interval.
+	const cronInterval = parseCronInterval(runtime.config.schedule)
+	const cycleIndex = Math.floor(Date.now() / (cronInterval * 60000))
+
+	let offset = 0
+	if (totalGroups > MAX_HTTP_CALLS) {
+		const numWindows = Math.ceil(totalGroups / MAX_HTTP_CALLS)
+		offset = (cycleIndex % numWindows) * MAX_HTTP_CALLS
+	}
+
 	const httpCapability = new HTTPClient()
 	let triggeredCount = 0
+	let checkedCount = 0
 
-	for (const policy of activePolicies) {
+	// Pick the rotating window of up to MAX_HTTP_CALLS groups
+	const groupsToProcess = groupKeys.slice(offset, offset + MAX_HTTP_CALLS)
+	// If the window wraps past the end, include groups from the start
+	if (groupsToProcess.length < MAX_HTTP_CALLS && offset > 0) {
+		const remaining = MAX_HTTP_CALLS - groupsToProcess.length
+		groupsToProcess.push(...groupKeys.slice(0, remaining))
+	}
+
+	runtime.log(
+		`Processing ${groupsToProcess.length} groups starting at offset ${offset} ` +
+		`of ${totalGroups} total (cycle ${cycleIndex})`,
+	)
+
+	for (const groupKey of groupsToProcess) {
+		const policiesInGroup = groups.get(groupKey)!
+		// Use the first policy as the representative for the weather fetch
+		const representative = policiesInGroup[0]
+
 		try {
 			runtime.log(
-				`Checking policy ${policy.id}: hazard=${policy.hazardName}, ` +
-				`location=(${policy.lat}, ${policy.lon}), threshold=${policy.triggerThreshold}`,
+				`Fetching weather for group ${groupKey} ` +
+				`(${policiesInGroup.length} policies, hazard=${representative.hazardName})`,
 			)
 
-			// Fetch weather data from Open-Meteo via DON consensus.
-			// Each node calls the public API independently; results are aggregated via median.
+			// Single HTTP call for the entire group via DON consensus
 			const result = httpCapability
 				.sendRequest(
 					runtime,
-					createWeatherFetcher(policy),
+					createWeatherFetcher(representative),
 					ConsensusAggregationByFields<TriggerCheckResult>({
 						triggered: median,
 						value: median,
@@ -582,30 +646,34 @@ const checkPoliciesAndTriggerPayouts = (runtime: Runtime<Config>): string => {
 				)(runtime.config)
 				.result()
 
-			const isTriggered = result.triggered >= 1
+			// Evaluate each policy in this group against the fetched value
+			for (const policy of policiesInGroup) {
+				checkedCount++
+				const isTriggered = evaluateTrigger(result.value, policy.triggerThreshold, policy.hazardName)
 
-			runtime.log(
-				`Policy ${policy.id}: triggered=${isTriggered}, ` +
-				`value=${result.value}, threshold=${result.threshold}`,
-			)
-
-			if (isTriggered) {
 				runtime.log(
-					`Policy ${policy.id} TRIGGERED! Observed ${result.value} ` +
-					`(threshold: ${policy.triggerThreshold}). Initiating payout...`,
+					`Policy ${policy.id}: triggered=${isTriggered}, ` +
+					`value=${result.value}, threshold=${policy.triggerThreshold}`,
 				)
 
-				// Use maxCoverage as the payout amount (pro-rata is handled on-chain)
-				const observedValueInt = Math.round(result.value)
-				triggerPayout(runtime, policy.id, observedValueInt, policy.maxCoverage)
-				triggeredCount++
+				if (isTriggered) {
+					runtime.log(
+						`Policy ${policy.id} TRIGGERED! Observed ${result.value} ` +
+						`(threshold: ${policy.triggerThreshold}). Initiating payout...`,
+					)
+
+					const observedValueInt = Math.round(result.value)
+					triggerPayout(runtime, policy.id, observedValueInt, policy.maxCoverage)
+					triggeredCount++
+				}
 			}
 		} catch (error) {
-			runtime.log(`Error processing policy ${policy.id}: ${error}`)
+			runtime.log(`Error processing group ${groupKey}: ${error}`)
 		}
 	}
 
-	return `Checked ${activePolicies.length} policies, triggered ${triggeredCount} payouts`
+	return `Checked ${checkedCount}/${activePolicies.length} policies ` +
+		`(${groupsToProcess.length} HTTP calls), triggered ${triggeredCount} payouts`
 }
 
 // ==============================================================================

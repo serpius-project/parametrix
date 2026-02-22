@@ -16270,6 +16270,20 @@ var configSchema = exports_external.object({
     gasLimit: exports_external.string()
   }))
 });
+var MAX_HTTP_CALLS = 5;
+var MAX_EVM_READS = 10;
+var parseCronInterval = (schedule) => {
+  const parts = schedule.trim().split(/\s+/);
+  if (parts.length < 5)
+    return 1;
+  const minuteField = parts[0];
+  if (minuteField === "*")
+    return 1;
+  const stepMatch = minuteField.match(/^\*\/(\d+)$/);
+  if (stepMatch)
+    return Math.max(1, parseInt(stepMatch[1], 10));
+  return 1;
+};
 var HAZARD_ID_TO_NAME = {
   0: "heatwave",
   1: "flood",
@@ -16470,9 +16484,22 @@ var getActivePolicies = (runtime2) => {
     data: bytesToHex(nextIdResponse.data)
   });
   runtime2.log(`Next policy ID: ${nextId.toString()}`);
+  const totalPolicies = Number(nextId) - 1;
+  const maxPolicyScan = MAX_EVM_READS - 1;
+  let scanStart = 1;
+  let scanEnd = Number(nextId);
+  if (totalPolicies > maxPolicyScan) {
+    const cronInterval = parseCronInterval(runtime2.config.schedule);
+    const cycleIndex = Math.floor(Date.now() / (cronInterval * 60000));
+    const numWindows = Math.ceil(totalPolicies / maxPolicyScan);
+    const windowIndex = cycleIndex % numWindows;
+    scanStart = windowIndex * maxPolicyScan + 1;
+    scanEnd = Math.min(scanStart + maxPolicyScan, Number(nextId));
+    runtime2.log(`Scanning policy IDs ${scanStart}..${scanEnd - 1} ` + `(window ${windowIndex + 1}/${numWindows}, ${maxPolicyScan} max per cycle)`);
+  }
   const policies = [];
   const currentTime = Math.floor(Date.now() / 1000);
-  for (let id = 1;id < Number(nextId); id++) {
+  for (let id = scanStart;id < scanEnd; id++) {
     try {
       const policyCallData = encodeFunctionData({
         abi: PolicyManager,
@@ -16491,24 +16518,6 @@ var getActivePolicies = (runtime2) => {
         abi: PolicyManager,
         functionName: "policies",
         data: bytesToHex(policyResponse.data)
-      });
-      const holderCallData = encodeFunctionData({
-        abi: PolicyManager,
-        functionName: "holderOf",
-        args: [BigInt(id)]
-      });
-      const holderResponse = evmClient.callContract(runtime2, {
-        call: encodeCallMsg({
-          from: zeroAddress,
-          to: evmConfig.policyManagerAddress,
-          data: holderCallData
-        }),
-        blockNumber: LAST_FINALIZED_BLOCK_NUMBER
-      }).result();
-      const holder = decodeFunctionResult({
-        abi: PolicyManager,
-        functionName: "holderOf",
-        data: bytesToHex(holderResponse.data)
       });
       const [hazard, start, end, lat, lon, maxCoverage, premium, triggerThreshold, paid] = policyData;
       if (!paid && Number(end) > currentTime) {
@@ -16529,8 +16538,7 @@ var getActivePolicies = (runtime2) => {
           maxCoverage,
           premium,
           triggerThreshold: Number(triggerThreshold),
-          paid,
-          holder
+          paid
         });
       }
     } catch (error) {
@@ -16577,6 +16585,7 @@ var triggerPayout = (runtime2, policyId, observedValue, payoutAmount) => {
   runtime2.log(`Payout triggered successfully at txHash: ${bytesToHex(txHash)}`);
   return bytesToHex(txHash);
 };
+var policyGroupKey = (p) => `${p.lat},${p.lon},${p.hazardName}`;
 var checkPoliciesAndTriggerPayouts = (runtime2) => {
   runtime2.log("Starting policy check...");
   const activePolicies = getActivePolicies(runtime2);
@@ -16584,29 +16593,61 @@ var checkPoliciesAndTriggerPayouts = (runtime2) => {
   if (activePolicies.length === 0) {
     return "No active policies to check";
   }
+  const groups = new Map;
+  for (const policy of activePolicies) {
+    const key = policyGroupKey(policy);
+    const arr = groups.get(key);
+    if (arr) {
+      arr.push(policy);
+    } else {
+      groups.set(key, [policy]);
+    }
+  }
+  const groupKeys = Array.from(groups.keys()).sort();
+  const totalGroups = groupKeys.length;
+  runtime2.log(`Grouped into ${totalGroups} unique (location, hazard) groups`);
+  const cronInterval = parseCronInterval(runtime2.config.schedule);
+  const cycleIndex = Math.floor(Date.now() / (cronInterval * 60000));
+  let offset = 0;
+  if (totalGroups > MAX_HTTP_CALLS) {
+    const numWindows = Math.ceil(totalGroups / MAX_HTTP_CALLS);
+    offset = cycleIndex % numWindows * MAX_HTTP_CALLS;
+  }
   const httpCapability = new ClientCapability2;
   let triggeredCount = 0;
-  for (const policy of activePolicies) {
+  let checkedCount = 0;
+  const groupsToProcess = groupKeys.slice(offset, offset + MAX_HTTP_CALLS);
+  if (groupsToProcess.length < MAX_HTTP_CALLS && offset > 0) {
+    const remaining = MAX_HTTP_CALLS - groupsToProcess.length;
+    groupsToProcess.push(...groupKeys.slice(0, remaining));
+  }
+  runtime2.log(`Processing ${groupsToProcess.length} groups starting at offset ${offset} ` + `of ${totalGroups} total (cycle ${cycleIndex})`);
+  for (const groupKey of groupsToProcess) {
+    const policiesInGroup = groups.get(groupKey);
+    const representative = policiesInGroup[0];
     try {
-      runtime2.log(`Checking policy ${policy.id}: hazard=${policy.hazardName}, ` + `location=(${policy.lat}, ${policy.lon}), threshold=${policy.triggerThreshold}`);
-      const result = httpCapability.sendRequest(runtime2, createWeatherFetcher(policy), ConsensusAggregationByFields({
+      runtime2.log(`Fetching weather for group ${groupKey} ` + `(${policiesInGroup.length} policies, hazard=${representative.hazardName})`);
+      const result = httpCapability.sendRequest(runtime2, createWeatherFetcher(representative), ConsensusAggregationByFields({
         triggered: median,
         value: median,
         threshold: median
       }))(runtime2.config).result();
-      const isTriggered = result.triggered >= 1;
-      runtime2.log(`Policy ${policy.id}: triggered=${isTriggered}, ` + `value=${result.value}, threshold=${result.threshold}`);
-      if (isTriggered) {
-        runtime2.log(`Policy ${policy.id} TRIGGERED! Observed ${result.value} ` + `(threshold: ${policy.triggerThreshold}). Initiating payout...`);
-        const observedValueInt = Math.round(result.value);
-        triggerPayout(runtime2, policy.id, observedValueInt, policy.maxCoverage);
-        triggeredCount++;
+      for (const policy of policiesInGroup) {
+        checkedCount++;
+        const isTriggered = evaluateTrigger(result.value, policy.triggerThreshold, policy.hazardName);
+        runtime2.log(`Policy ${policy.id}: triggered=${isTriggered}, ` + `value=${result.value}, threshold=${policy.triggerThreshold}`);
+        if (isTriggered) {
+          runtime2.log(`Policy ${policy.id} TRIGGERED! Observed ${result.value} ` + `(threshold: ${policy.triggerThreshold}). Initiating payout...`);
+          const observedValueInt = Math.round(result.value);
+          triggerPayout(runtime2, policy.id, observedValueInt, policy.maxCoverage);
+          triggeredCount++;
+        }
       }
     } catch (error) {
-      runtime2.log(`Error processing policy ${policy.id}: ${error}`);
+      runtime2.log(`Error processing group ${groupKey}: ${error}`);
     }
   }
-  return `Checked ${activePolicies.length} policies, triggered ${triggeredCount} payouts`;
+  return `Checked ${checkedCount}/${activePolicies.length} policies ` + `(${groupsToProcess.length} HTTP calls), triggered ${triggeredCount} payouts`;
 };
 var onCronTrigger = (runtime2, payload) => {
   if (!payload.scheduledExecutionTime) {
