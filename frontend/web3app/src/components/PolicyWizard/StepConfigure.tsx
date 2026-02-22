@@ -128,7 +128,7 @@ export default function StepConfigure({
   useEffect(() => {
     if (appliedDefaultRef.current === hazard) return
     if (recommendedResult) {
-      onChange({ threshold: recommendedResult.threshold })
+      onChange({ threshold: Math.round(recommendedResult.threshold) })
       appliedDefaultRef.current = hazard
     } else if (wizard.threshold === null) {
       // Temporary default while tier search is in progress
@@ -174,7 +174,7 @@ export default function StepConfigure({
           {TIERS.map((tier) => {
             const result = tiers[tier.key]
             const isLoading = tierLoading[tier.key]
-            const isActive = result && wizard.threshold !== null && Math.abs(wizard.threshold - result.threshold) < 0.05
+            const isActive = result && wizard.threshold !== null && wizard.threshold === Math.round(result.threshold)
             return (
               <button
                 key={tier.key}
@@ -183,7 +183,7 @@ export default function StepConfigure({
                 disabled={isLoading}
                 onClick={() => {
                   if (result) {
-                    onChange({ threshold: result.threshold })
+                    onChange({ threshold: Math.round(result.threshold) })
                   }
                 }}
               >
@@ -212,8 +212,9 @@ export default function StepConfigure({
               </button>
               <input
                 type="number"
+                step="1"
                 value={wizard.threshold ?? ''}
-                onChange={(e) => onChange({ threshold: parseFloat(e.target.value) || 0 })}
+                onChange={(e) => onChange({ threshold: Math.round(parseFloat(e.target.value) || 0) })}
               />
               <button type="button" className="number-btn" onClick={() => onChange({ threshold: (wizard.threshold ?? 0) + 1 })}>
                 <i className="fa-solid fa-plus" />

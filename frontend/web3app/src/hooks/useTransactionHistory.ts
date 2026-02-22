@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { PolicyManagerAbi } from '../abi/PolicyManager'
 import { POLICY_MANAGER_ADDRESS } from '../config/contracts'
 import { useViemClients } from './useWalletClient'
 
@@ -47,7 +46,7 @@ export function useTransactionHistory() {
               { name: 'start', type: 'uint256', indexed: false },
               { name: 'end', type: 'uint256', indexed: false },
               { name: 'maxCoverage', type: 'uint256', indexed: false },
-              { name: 'triggerThreshold', type: 'uint256', indexed: false },
+              { name: 'triggerThreshold', type: 'int256', indexed: false },
               { name: 'lat', type: 'int32', indexed: false },
               { name: 'lon', type: 'int32', indexed: false },
             ],
@@ -64,7 +63,7 @@ export function useTransactionHistory() {
             inputs: [
               { name: 'policyId', type: 'uint256', indexed: true },
               { name: 'holder', type: 'address', indexed: true },
-              { name: 'observedValue', type: 'uint256', indexed: false },
+              { name: 'observedValue', type: 'int256', indexed: false },
               { name: 'requestedPayout', type: 'uint256', indexed: false },
               { name: 'actualPayout', type: 'uint256', indexed: false },
             ],

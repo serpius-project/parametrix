@@ -58,7 +58,7 @@ export function useDepositHistory() {
               { name: 'start', type: 'uint256', indexed: false },
               { name: 'end', type: 'uint256', indexed: false },
               { name: 'maxCoverage', type: 'uint256', indexed: false },
-              { name: 'triggerThreshold', type: 'uint256', indexed: false },
+              { name: 'triggerThreshold', type: 'int256', indexed: false },
               { name: 'lat', type: 'int32', indexed: false },
               { name: 'lon', type: 'int32', indexed: false },
             ],
@@ -74,7 +74,7 @@ export function useDepositHistory() {
             inputs: [
               { name: 'policyId', type: 'uint256', indexed: true },
               { name: 'holder', type: 'address', indexed: true },
-              { name: 'observedValue', type: 'uint256', indexed: false },
+              { name: 'observedValue', type: 'int256', indexed: false },
               { name: 'requestedPayout', type: 'uint256', indexed: false },
               { name: 'actualPayout', type: 'uint256', indexed: false },
             ],
@@ -146,6 +146,7 @@ export function useDepositHistory() {
       // Policy purchases → premium + coverage_add
       for (let i = 0; i < purchaseLogs.length; i++) {
         const log = purchaseLogs[i]
+        if (!log) continue
         const maxCoverage = log.args.maxCoverage!
 
         events.push({

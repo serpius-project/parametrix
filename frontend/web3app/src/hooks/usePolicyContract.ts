@@ -104,7 +104,7 @@ export function useBuyPolicy() {
             durationDays,
             coverageRaw,
             premiumRaw,
-            BigInt(params.triggerThreshold),
+            BigInt(Math.round(params.triggerThreshold)),
             address,
             latInt,
             lonInt,
