@@ -126,7 +126,7 @@ payout_trigger/
   "schedule": "*/2 * * * *",
   "lookbackMonths": 3,
   "evms": [{
-    "policyManagerAddress": "0x4b0aF97a249Dbf50203C7Cadb8Ee628DC767F09f",
+    "policyManagerAddress": "0x7C3C2AC7BE829fB101AF70b753b924bd9d4a0C86",
     "chainSelectorName": "ethereum-testnet-sepolia",
     "gasLimit": "1000000"
   }]

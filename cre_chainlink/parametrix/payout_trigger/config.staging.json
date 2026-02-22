@@ -3,7 +3,7 @@
   "lookbackMonths": 3,
   "evms": [
     {
-      "policyManagerAddress": "0x4b0aF97a249Dbf50203C7Cadb8Ee628DC767F09f",
+      "policyManagerAddress": "0x7C3C2AC7BE829fB101AF70b753b924bd9d4a0C86",
       "chainSelectorName": "ethereum-testnet-sepolia",
       "rpcUrl": "https://virtual.rpc.tenderly.co/mmendozaj/wedefin/private/gst/fb4d9fa7-c717-4600-b54e-cb7d27dd79b1",
       "gasLimit": "1000000"

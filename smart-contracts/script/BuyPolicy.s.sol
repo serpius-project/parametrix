@@ -25,7 +25,7 @@ import {policyManager} from "../src/policyManager.sol";
 contract BuyPolicyScript is Script {
 
     // ── Update these after running Deploy.s.sol ─────────────────────────────
-    address constant POLICY_MANAGER_ADDRESS = address(0x4b0aF97a249Dbf50203C7Cadb8Ee628DC767F09f);
+    address constant POLICY_MANAGER_ADDRESS = address(0x7C3C2AC7BE829fB101AF70b753b924bd9d4a0C86);
     address constant ASSET_TOKEN_ADDRESS    = address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48); 
 
     // ── Policy configuration ─────────────────────────────────────────────────
@@ -33,7 +33,7 @@ contract BuyPolicyScript is Script {
     uint256 constant DURATION_DAYS      = 30;    // Policy length in days
     uint256 constant MAX_COVERAGE_USDC  = 1000;  // Max payout in whole USDC ($1,000)
     uint256 constant PREMIUM_USDC       = 50;    // Premium in whole USDC ($50)
-    uint256 constant TRIGGER_THRESHOLD  = 35;    // e.g. 35°C for heatwave
+    int256  constant TRIGGER_THRESHOLD  = 35;    // e.g. 35°C for heatwave, -50mm for drought
     int32   constant LAT                = 395157;   // 39.5157° (Tahoe Reno, NV) × 10 000
     int32   constant LON                = -1194713;  // -119.4713° × 10 000
 
@@ -99,7 +99,7 @@ contract BuyPolicyScript is Script {
             ,  // lon
             uint256 storedMaxCoverage,
             uint256 storedPremium,
-            uint256 storedThreshold,
+            int256 storedThreshold,
             bool paid
         ) = manager.policies(policyId);
 

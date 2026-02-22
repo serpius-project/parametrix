@@ -91,21 +91,29 @@ contract PolicyManagerTest is Test {
     }
 
     function test_AddHazardType() public {
-        manager.addHazardType(3, "Earthquake");
+        manager.addHazardType(3, "Earthquake", true);
 
         assertTrue(manager.validHazards(3), "Earthquake should be valid");
         assertEq(manager.hazardNames(3), "Earthquake", "Earthquake name mismatch");
+        assertTrue(manager.hazardTriggerAbove(3), "Earthquake should trigger above");
+    }
+
+    function test_AddHazardTypeTriggerBelow() public {
+        manager.addHazardType(4, "ColdSnap", false);
+
+        assertTrue(manager.validHazards(4), "ColdSnap should be valid");
+        assertFalse(manager.hazardTriggerAbove(4), "ColdSnap should trigger below");
     }
 
     function test_AddHazardTypeRevertsIfAlreadyExists() public {
         vm.expectRevert(bytes("hazard already exists"));
-        manager.addHazardType(0, "Heatwave");
+        manager.addHazardType(0, "Heatwave", true);
     }
 
     function test_AddHazardTypeRevertsIfNotOwner() public {
         vm.prank(alice);
         vm.expectRevert();
-        manager.addHazardType(3, "Earthquake");
+        manager.addHazardType(3, "Earthquake", true);
     }
 
     function test_RemoveHazardType() public {
@@ -121,7 +129,7 @@ contract PolicyManagerTest is Test {
 
     function test_BuyPolicyWithNewHazardType() public {
         // Add new hazard type
-        manager.addHazardType(3, "Earthquake");
+        manager.addHazardType(3, "Earthquake", true);
 
         uint256 premium = 1000 * 10**18;
         uint256 maxCoverage = 10_000 * 10**18;
@@ -482,6 +490,92 @@ contract PolicyManagerTest is Test {
 
         vm.expectRevert(bytes("too much"));
         manager.triggerPayout(policyId, 40, 11_000 * 10**18); // Exceeds maxCoverage
+    }
+
+    /* ============ Drought / Trigger Direction Tests ============ */
+
+    function test_DefaultHazardTriggerDirections() public view {
+        assertTrue(manager.hazardTriggerAbove(0), "Heatwave should trigger above");
+        assertTrue(manager.hazardTriggerAbove(1), "Flood should trigger above");
+        assertFalse(manager.hazardTriggerAbove(2), "Drought should trigger below");
+    }
+
+    function test_TriggerPayoutDroughtNegativeThreshold() public {
+        uint256 premium = 1000 * 10**18;
+        uint256 maxCoverage = 10_000 * 10**18;
+
+        vm.startPrank(alice);
+        asset.approve(address(manager), premium);
+        uint256 policyId = manager.buyPolicy(
+            2, // Drought
+            30,
+            maxCoverage,
+            premium,
+            int256(-50), // Deficit threshold: -50mm
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
+        );
+        vm.stopPrank();
+
+        uint256 aliceBalanceBefore = asset.balanceOf(alice);
+
+        // Observed deficit of -80mm is worse (lower) than -50mm threshold → should trigger
+        manager.triggerPayout(policyId, int256(-80), 5000 * 10**18);
+
+        uint256 aliceBalanceAfter = asset.balanceOf(alice);
+        assertEq(aliceBalanceAfter - aliceBalanceBefore, 5000 * 10**18, "Alice should receive drought payout");
+
+        (, , , , , , , , bool paid) = manager.policies(policyId);
+        assertTrue(paid, "Drought policy should be marked as paid");
+    }
+
+    function test_TriggerPayoutDroughtNotTriggered() public {
+        uint256 premium = 1000 * 10**18;
+        uint256 maxCoverage = 10_000 * 10**18;
+
+        vm.startPrank(alice);
+        asset.approve(address(manager), premium);
+        uint256 policyId = manager.buyPolicy(
+            2, // Drought
+            30,
+            maxCoverage,
+            premium,
+            int256(-50), // Deficit threshold: -50mm
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
+        );
+        vm.stopPrank();
+
+        // Observed deficit of -30mm is above the -50mm threshold → should NOT trigger
+        vm.expectRevert(bytes("no trigger"));
+        manager.triggerPayout(policyId, int256(-30), 5000 * 10**18);
+    }
+
+    function test_TriggerPayoutDroughtExactThreshold() public {
+        uint256 premium = 1000 * 10**18;
+        uint256 maxCoverage = 10_000 * 10**18;
+
+        vm.startPrank(alice);
+        asset.approve(address(manager), premium);
+        uint256 policyId = manager.buyPolicy(
+            2, // Drought
+            30,
+            maxCoverage,
+            premium,
+            int256(-50),
+            alice,
+            DEFAULT_LAT,
+            DEFAULT_LON
+        );
+        vm.stopPrank();
+
+        // Observed exactly at threshold → should trigger (<=)
+        manager.triggerPayout(policyId, int256(-50), 5000 * 10**18);
+
+        (, , , , , , , , bool paid) = manager.policies(policyId);
+        assertTrue(paid, "Drought policy at exact threshold should trigger");
     }
 
     /* ============ Expired Policy Release Tests ============ */

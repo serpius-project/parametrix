@@ -19,9 +19,10 @@ contract policyManager is ERC1155, Ownable {
     // Dynamic hazard type registry (replaces fixed enum for flexibility)
     mapping(uint8 => bool) public validHazards;
     mapping(uint8 => string) public hazardNames;
+    mapping(uint8 => bool) public hazardTriggerAbove; // true = value >= threshold triggers, false = value <= threshold triggers
 
     // Hazard management events
-    event HazardAdded(uint8 indexed hazardId, string name);
+    event HazardAdded(uint8 indexed hazardId, string name, bool triggerAbove);
     event HazardRemoved(uint8 indexed hazardId);
 
     // Events for CRE monitoring
@@ -32,7 +33,7 @@ contract policyManager is ERC1155, Ownable {
         uint256 start,
         uint256 end,
         uint256 maxCoverage,
-        uint256 triggerThreshold,
+        int256 triggerThreshold,
         int32 lat,
         int32 lon
     );
@@ -40,7 +41,7 @@ contract policyManager is ERC1155, Ownable {
     event PayoutTriggered(
         uint256 indexed policyId,
         address indexed holder,
-        uint256 observedValue,
+        int256 observedValue,
         uint256 requestedPayout,
         uint256 actualPayout
     );
@@ -58,7 +59,7 @@ contract policyManager is ERC1155, Ownable {
         int32 lon;          // longitude × 10 000  (e.g. -119.4713° → -1194713)
         uint256 maxCoverage;
         uint256 premium;
-        uint256 triggerThreshold;
+        int256 triggerThreshold;
         bool paid;
     }
 
@@ -67,7 +68,7 @@ contract policyManager is ERC1155, Ownable {
         uint256 durationDays;
         uint256 maxCoverage;
         uint256 premium;
-        uint256 triggerThreshold;
+        int256 triggerThreshold;
         int32 lat;
         int32 lon;
     }
@@ -87,7 +88,7 @@ contract policyManager is ERC1155, Ownable {
         vault = vault_;
         oracle = msg.sender;
 
-        // Initialize default hazard types (backward compatible)
+        // Initialize default hazard types
         validHazards[0] = true; // Heatwave
         validHazards[1] = true; // Flood
         validHazards[2] = true; // Drought
@@ -95,6 +96,10 @@ contract policyManager is ERC1155, Ownable {
         hazardNames[0] = "Heatwave";
         hazardNames[1] = "Flood";
         hazardNames[2] = "Drought";
+
+        hazardTriggerAbove[0] = true;  // Heatwave: high temp is bad
+        hazardTriggerAbove[1] = true;  // Flood: high discharge is bad
+        hazardTriggerAbove[2] = false; // Drought: low deficit is bad
     }
 
     function setOracle(address o) external onlyOwner { oracle = o; }
@@ -108,14 +113,15 @@ contract policyManager is ERC1155, Ownable {
      * @param hazardId Unique identifier for the hazard (e.g., 3, 4, 5...)
      * @param name Human-readable name for the hazard (e.g., "Earthquake", "Hurricane")
      */
-    function addHazardType(uint8 hazardId, string calldata name) external onlyOwner {
+    function addHazardType(uint8 hazardId, string calldata name, bool triggerAbove) external onlyOwner {
         require(!validHazards[hazardId], "hazard already exists");
         require(bytes(name).length > 0, "name required");
 
         validHazards[hazardId] = true;
         hazardNames[hazardId] = name;
+        hazardTriggerAbove[hazardId] = triggerAbove;
 
-        emit HazardAdded(hazardId, name);
+        emit HazardAdded(hazardId, name, triggerAbove);
     }
 
     /**
@@ -140,7 +146,7 @@ contract policyManager is ERC1155, Ownable {
         uint256 durationDays,
         uint256 maxCoverage,
         uint256 premium,
-        uint256 triggerThreshold,
+        int256 triggerThreshold,
         address receiver,
         int32 lat,
         int32 lon
@@ -242,13 +248,17 @@ contract policyManager is ERC1155, Ownable {
         }
     }
 
-    function triggerPayout(uint256 id, uint256 observedValue, uint256 payout) external {
+    function triggerPayout(uint256 id, int256 observedValue, uint256 payout) external {
         require(msg.sender == oracle, "not oracle");
 
         Policy storage p = policies[id];
         require(!p.paid, "paid");
         require(block.timestamp <= p.end, "expired");
-        require(observedValue >= p.triggerThreshold, "no trigger");
+        if (hazardTriggerAbove[p.hazard]) {
+            require(observedValue >= p.triggerThreshold, "no trigger");
+        } else {
+            require(observedValue <= p.triggerThreshold, "no trigger");
+        }
         require(payout <= p.maxCoverage, "too much");
 
         address holder = holderOf[id];
