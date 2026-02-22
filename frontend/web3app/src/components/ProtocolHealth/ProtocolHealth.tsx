@@ -129,13 +129,14 @@ export default function ProtocolHealth() {
                     borderRadius: 8,
                     color: '#fff',
                   }}
-                  formatter={(value: number, name: string) => {
+                  formatter={(value: number | string | undefined, name: string | undefined) => {
                     const labels: Record<string, string> = {
                       cumulativeDeposits: 'Vault Deposits',
                       cumulativePremiums: 'Premiums Collected',
                       activeCoverage: 'Active Coverage',
                     }
-                    return [`$${formatUsdc(value)} USDC`, labels[name] ?? name]
+                    const num = typeof value === 'number' ? value : 0
+                    return [`$${formatUsdc(num)} USDC`, labels[name ?? ''] ?? name]
                   }}
                 />
                 <Legend

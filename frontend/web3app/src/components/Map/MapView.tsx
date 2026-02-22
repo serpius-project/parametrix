@@ -31,6 +31,7 @@ function getPolicyStatusLabel(policy: PolicyOnChain): string {
 
 export default function MapView({ sites, policies, onLocationSelect }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const searchPanelRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
   const geocoderRef = useRef<MapboxGeocoder | null>(null)
   const clickMarkerRef = useRef<mapboxgl.Marker | null>(null)
@@ -97,9 +98,9 @@ export default function MapView({ sites, policies, onLocationSelect }: MapViewPr
       customAttribution: '© Wedefin Labs',
     })
 
-    map.addControl(new mapboxgl.NavigationControl(), 'top-right')
+    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right')
 
-    // Geocoder search bar
+    // Geocoder search bar – add to map then relocate into our custom panel
     const geocoder = new MapboxGeocoder({
       accessToken: mapboxgl.accessToken,
       mapboxgl: mapboxgl as any, // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -109,6 +110,15 @@ export default function MapView({ sites, policies, onLocationSelect }: MapViewPr
     })
 
     map.addControl(geocoder, 'top-left')
+
+    // Move the geocoder DOM element from mapbox's control container into our panel
+    if (searchPanelRef.current) {
+      const geocoderEl = containerRef.current?.querySelector('.mapboxgl-ctrl-geocoder')
+      const target = searchPanelRef.current.querySelector('.map-search-geocoder')
+      if (geocoderEl && target) {
+        target.appendChild(geocoderEl)
+      }
+    }
 
     // When user selects a geocoder result, snap to nearest data center
     geocoder.on('result', (e: { result: { center: [number, number] } }) => {
@@ -300,6 +310,21 @@ export default function MapView({ sites, policies, onLocationSelect }: MapViewPr
   return (
     <div className="map-wrapper">
       <div ref={containerRef} className="map-container" />
+      <div className="map-search-panel" ref={searchPanelRef}>
+        <div className="map-search-geocoder" />
+        <div className="map-search-divider" />
+        <label className="map-toggle">
+          <span>Precomputed Data Centers</span>
+          <div className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={showSites}
+              onChange={() => setShowSites((prev) => !prev)}
+            />
+            <span className="toggle-slider" />
+          </div>
+        </label>
+      </div>
       <div className="map-layers">
         <button
           type="button"
@@ -329,17 +354,6 @@ export default function MapView({ sites, policies, onLocationSelect }: MapViewPr
                   type="checkbox"
                   checked={showInactivePolicies}
                   onChange={() => setShowInactivePolicies((prev) => !prev)}
-                />
-                <span className="toggle-slider" />
-              </div>
-            </label>
-            <label className="map-toggle">
-              <span>Precomp DCs</span>
-              <div className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={showSites}
-                  onChange={() => setShowSites((prev) => !prev)}
                 />
                 <span className="toggle-slider" />
               </div>

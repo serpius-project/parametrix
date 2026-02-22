@@ -214,7 +214,7 @@ export function useDepositHistory() {
       let cumDeposits = 0n
       let cumPremiums = 0n
       let cumCoverage = 0n
-      const points: ChartPoint[] = []
+      const points = new Map<string, ChartPoint>()
 
       for (const ev of events) {
         if (ev.type === 'deposit') cumDeposits += ev.amount
@@ -227,7 +227,7 @@ export function useDepositHistory() {
           ? new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
           : `Block ${ev.blockNumber}`
 
-        points.push({
+        points.set(date, {
           date,
           cumulativeDeposits: Number(cumDeposits) / 1e6,
           cumulativePremiums: Number(cumPremiums) / 1e6,
@@ -235,7 +235,7 @@ export function useDepositHistory() {
         })
       }
 
-      setData(points)
+      setData([...points.values()])
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load deposit history')
     } finally {
