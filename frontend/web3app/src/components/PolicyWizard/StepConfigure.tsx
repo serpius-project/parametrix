@@ -23,12 +23,12 @@ const DEFAULT_THRESHOLDS: Record<string, number> = {
 }
 
 const TIERS = [
-  { key: 'budget', name: 'Budget', subtitle: 'Catastrophic', quantile: 0.05 / 6, icon: 'fa-solid fa-shield', recommended: true },
-  { key: 'balanced', name: 'Balanced', subtitle: 'Moderate', quantile: 0.40 / 6, icon: 'fa-solid fa-shield-halved', recommended: false },
-  { key: 'protection', name: 'Protection+', subtitle: 'Sensitive', quantile: 0.85 / 6, icon: 'fa-solid fa-shield-heart', recommended: false },
+  { key: 'budget', name: 'Budget', subtitle: 'Catastrophic', exceedanceProb: 0.05 / 6, icon: 'fa-solid fa-shield', recommended: true },
+  { key: 'balanced', name: 'Balanced', subtitle: 'Moderate', exceedanceProb: 0.40 / 6, icon: 'fa-solid fa-shield-halved', recommended: false },
+  { key: 'protection', name: 'Protection+', subtitle: 'Sensitive', exceedanceProb: 0.85 / 6, icon: 'fa-solid fa-shield-heart', recommended: false },
 ] as const
 
-const TIER_DEFS: TierDef[] = TIERS.map((t) => ({ key: t.key, quantile: t.quantile }))
+const TIER_DEFS: TierDef[] = TIERS.map((t) => ({ key: t.key, exceedanceProb: t.exceedanceProb }))
 
 function DurationSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const trackRef = useRef<HTMLDivElement>(null)
@@ -94,7 +94,6 @@ export default function StepConfigure({
   const { premium, loading, error, calculate } = usePremium()
   const config = hazardConfigs[hazard]
   const unit = formatUnit(config?.unit ?? '')
-  const direction = config?.direction ?? 'high_is_bad'
 
   // Recalculate premium when params change (use clicked coordinates)
   const lat = wizard.clickLat ?? site.lat
@@ -109,9 +108,8 @@ export default function StepConfigure({
       n_months: wizard.durationMonths,
       payout: wizard.coverageUsdc,
       loading_factor: 0.2,
-      direction,
     }),
-    [lat, lon, hazard, wizard.durationMonths, wizard.coverageUsdc, direction],
+    [lat, lon, hazard, wizard.durationMonths, wizard.coverageUsdc],
   )
 
   const { tiers, loading: tierLoading, searchAll } = useTierSearch(tierParams)

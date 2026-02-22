@@ -38,6 +38,9 @@ export default function MapView({ sites, policies, onLocationSelect }: MapViewPr
   const siteMarkersRef = useRef<mapboxgl.Marker[]>([])
   const hasFittedRef = useRef(false)
   const [showSites, setShowSites] = useState(false)
+  const [showActivePolicies, setShowActivePolicies] = useState(false)
+  const [showInactivePolicies, setShowInactivePolicies] = useState(false)
+  const [layersOpen, setLayersOpen] = useState(false)
   // Keep latest callbacks in refs so map/geocoder handlers always use current values
   const sitesRef = useRef(sites)
   const onLocationSelectRef = useRef(onLocationSelect)
@@ -168,11 +171,23 @@ export default function MapView({ sites, policies, onLocationSelect }: MapViewPr
     policyMarkersRef.current.forEach((m) => m.remove())
     policyMarkersRef.current = []
 
-    if (policies.length === 0) return
+    const filtered = policies.filter((p) => {
+      const status = getPolicyStatus(p)
+      if (status === 'active' && !showActivePolicies) return false
+      if (status === 'inactive' && !showInactivePolicies) return false
+      return true
+    })
+
+    if (filtered.length === 0) {
+      if (!showSites) {
+        map.flyTo({ center: [8.5417, 47.3769], zoom: 15, pitch: 45, duration: 1500 })
+      }
+      return
+    }
 
     const bounds = new mapboxgl.LngLatBounds()
 
-    policies.forEach((policy) => {
+    filtered.forEach((policy) => {
       const lat = int32ToCoord(policy.lat)
       const lon = int32ToCoord(policy.lon)
       const status = getPolicyStatus(policy)
@@ -214,18 +229,24 @@ export default function MapView({ sites, policies, onLocationSelect }: MapViewPr
         duration: 1500,
       })
     }
-  }, [policies])
+  }, [policies, showActivePolicies, showInactivePolicies, showSites])
 
-  // Fly to default view: policies bounds or Zurich
+  // Fly to default view: visible policy bounds or Zurich
   const flyToDefault = useCallback((map: mapboxgl.Map) => {
-    if (policies.length > 0) {
+    const visible = policies.filter((p) => {
+      const status = getPolicyStatus(p)
+      if (status === 'active' && !showActivePolicies) return false
+      if (status === 'inactive' && !showInactivePolicies) return false
+      return true
+    })
+    if (visible.length > 0) {
       const bounds = new mapboxgl.LngLatBounds()
-      policies.forEach((p) => bounds.extend([int32ToCoord(p.lon), int32ToCoord(p.lat)]))
+      visible.forEach((p) => bounds.extend([int32ToCoord(p.lon), int32ToCoord(p.lat)]))
       map.fitBounds(bounds, { padding: 80, maxZoom: 12, duration: 1500 })
     } else {
       map.flyTo({ center: [8.5417, 47.3769], zoom: 15, pitch: 45, duration: 1500 })
     }
-  }, [policies])
+  }, [policies, showActivePolicies, showInactivePolicies])
 
   // Toggle data center site markers + zoom
   useEffect(() => {
@@ -266,8 +287,7 @@ export default function MapView({ sites, policies, onLocationSelect }: MapViewPr
 
       el.addEventListener('click', (e) => {
         e.stopPropagation()
-        map.flyTo({ center: [site.lon, site.lat], zoom: Math.max(map.getZoom(), 15), pitch: 45, duration: 1500 })
-        marker.togglePopup()
+        selectLocation(map, site.lat, site.lon)
       })
 
       siteMarkersRef.current.push(marker)
@@ -280,17 +300,53 @@ export default function MapView({ sites, policies, onLocationSelect }: MapViewPr
   return (
     <div className="map-wrapper">
       <div ref={containerRef} className="map-container" />
-      <label className="map-toggle-sites">
-        <span>Precomputed Data Centers</span>
-        <div className="toggle-switch">
-          <input
-            type="checkbox"
-            checked={showSites}
-            onChange={() => setShowSites((prev) => !prev)}
-          />
-          <span className="toggle-slider" />
-        </div>
-      </label>
+      <div className="map-layers">
+        <button
+          type="button"
+          className={`map-layers-btn${layersOpen ? ' active' : ''}`}
+          onClick={() => setLayersOpen((prev) => !prev)}
+          title="Map layers"
+        >
+          <i className="fa-solid fa-layer-group" />
+        </button>
+        {layersOpen && (
+          <div className="map-layers-menu">
+            <label className="map-toggle">
+              <span>Active Policies</span>
+              <div className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={showActivePolicies}
+                  onChange={() => setShowActivePolicies((prev) => !prev)}
+                />
+                <span className="toggle-slider" />
+              </div>
+            </label>
+            <label className="map-toggle">
+              <span>Inactive Policies</span>
+              <div className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={showInactivePolicies}
+                  onChange={() => setShowInactivePolicies((prev) => !prev)}
+                />
+                <span className="toggle-slider" />
+              </div>
+            </label>
+            <label className="map-toggle">
+              <span>Precomp DCs</span>
+              <div className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={showSites}
+                  onChange={() => setShowSites((prev) => !prev)}
+                />
+                <span className="toggle-slider" />
+              </div>
+            </label>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
