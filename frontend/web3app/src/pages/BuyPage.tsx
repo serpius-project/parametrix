@@ -16,6 +16,14 @@ export default function BuyPage() {
   const [distanceKm, setDistanceKm] = useState<number | null>(null)
   const [placeName, setPlaceName] = useState<string | null>(null)
 
+  const handleClearSelection = useCallback(() => {
+    setSelectedSite(null)
+    setClickLat(null)
+    setClickLon(null)
+    setDistanceKm(null)
+    setPlaceName(null)
+  }, [])
+
   const handleLocationSelect = useCallback(
     (lat: number, lon: number, site: Site, distance: number, place: string | null) => {
       setClickLat(lat)
@@ -28,7 +36,7 @@ export default function BuyPage() {
   )
 
   return (
-    <div className="buy-page">
+    <div className={`buy-page${selectedSite ? ' site-selected' : ''}`}>
       <div className="buy-map">
         {error && <div className="map-error">Failed to load sites: {error}</div>}
         {loading && <div className="map-loading">Loading sites...</div>}
@@ -47,6 +55,7 @@ export default function BuyPage() {
           distanceKm={distanceKm}
           placeName={placeName}
           onComplete={() => navigate('/dashboard')}
+          onClearSelection={handleClearSelection}
         />
       </div>
     </div>

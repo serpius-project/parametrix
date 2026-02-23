@@ -9,9 +9,18 @@ import './index.css'
 const chainId = Number(import.meta.env.VITE_CHAIN_ID) || 1
 const rpcUrl = import.meta.env.VITE_CHAIN_RPC_URL || 'http://localhost:8545'
 
+const dynamicCssOverrides = `
+  @media (max-width: 768px) {
+    .network-switch-control__network-name {
+      display: none !important;
+    }
+  }
+`
+
 const dynamicSettings = {
   environmentId: import.meta.env.VITE_DYNAMIC_ENV_ID || '',
   walletConnectors: [EthereumWalletConnectors],
+  cssOverrides: dynamicCssOverrides,
   overrides: {
     evmNetworks: [
       {

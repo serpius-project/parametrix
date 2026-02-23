@@ -12,6 +12,7 @@ interface PolicyWizardProps {
   distanceKm: number | null
   placeName: string | null
   onComplete: () => void
+  onClearSelection: () => void
 }
 
 export default function PolicyWizard({
@@ -21,6 +22,7 @@ export default function PolicyWizard({
   distanceKm,
   placeName,
   onComplete,
+  onClearSelection,
 }: PolicyWizardProps) {
   const [step, setStep] = useState(0)
   const [wizard, setWizard] = useState<WizardState>({
@@ -61,7 +63,17 @@ export default function PolicyWizard({
   return (
     <div className="wizard-panel">
       <div className="wizard-site-info">
-        <h3>New Policy</h3>
+        <div className="wizard-site-header">
+          <h3>New Policy</h3>
+          <button
+            type="button"
+            className="wizard-back-to-map"
+            onClick={() => { resetWizard(); onClearSelection(); }}
+            aria-label="Back to map"
+          >
+            <i className="fa-solid fa-xmark" />
+          </button>
+        </div>
         {placeName && <p className="site-city">{placeName}</p>}
         {clickLat !== null && clickLon !== null && (
           <p className="site-distance">Lat {clickLat.toFixed(4)}°, Lon {clickLon.toFixed(4)}°</p>
