@@ -39,8 +39,11 @@ Automated parametric insurance payout trigger built on the **Chainlink Runtime E
                           │
                           ▼
               ┌───────────────────────┐
-              │  UnderwriterVault     │
-              │  Burns reserved shares│
+              │  Payout Waterfall     │
+              │  UW Vault → JR Vault  │
+              │  → SR Vault           │
+              │  (withdraws from Aave │
+              │   if needed)          │
               │  Transfers USDC to    │
               │  policyholder         │
               └───────────────────────┘
@@ -67,7 +70,9 @@ On a configurable cron schedule, the workflow:
 When a policy is triggered:
 - The CRE workflow generates a consensus report signed by the DON
 - Submits `triggerPayout(policyId, observedValue, payoutAmount)` to `PolicyManager`
-- The contract validates the call (only the authorized oracle can trigger), calculates the actual payout based on reserved vault shares, and transfers USDC to the policyholder
+- The contract validates the call (only the authorized oracle can trigger) and executes the **payout waterfall**: Underwriter Vault pays first, then Junior, then Senior (most protected). If local USDC is insufficient, vaults automatically withdraw from Aave V3
+- Pro-rata payouts apply when vaults are underfunded
+- Updates `activeCoverageByHazard` accounting
 - Emits `PayoutTriggered` event
 
 ## Supported Hazards
@@ -297,8 +302,10 @@ With a 2-minute cron, all policies are checked within `ceil(N/9) * 2` minutes, a
 - **No centralized dependency**: Weather data fetched directly from Open-Meteo (public API) — each DON node verifies independently
 - **Oracle authorization**: Only the DON address (set via `setOracle()`) can call `triggerPayout()`
 - **DON consensus**: Weather data aggregated via median across multiple nodes — no single point of failure
-- **Share reservation**: Each policy's coverage is backed by reserved vault shares at purchase time
-- **Dynamic payout**: If the vault is underfunded, the contract pays out proportionally based on available share value
+- **Three-vault waterfall**: Payouts cascade Underwriter -> Junior -> Senior, isolating risk by tranche
+- **Share reservation**: Each policy's coverage is backed by reserved shares across all 3 vaults at purchase time
+- **Aave liquidity**: Vaults auto-withdraw from Aave V3 if local USDC is insufficient for payout
+- **Dynamic payout**: If vaults are underfunded, the contract pays out proportionally based on available share value
 
 ## Resources
 

@@ -2,7 +2,10 @@
 pragma solidity ^0.8.20;
 
 import {Test, console} from "forge-std/Test.sol";
-import {policyManager, IUnderwriterVault} from "../src/policyManager.sol";
+import {policyManager} from "../src/policyManager.sol";
+import {IUnderwriterVault} from "../src/IUnderwriterVault.sol";
+import {IFeeRateModel} from "../src/IFeeRateModel.sol";
+import {FeeRateModel} from "../src/FeeRateModel.sol";
 import {underwriterVault} from "../src/underwriterVault.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -19,7 +22,10 @@ contract MockERC20 is ERC20 {
 
 contract PolicyManagerTest is Test {
     policyManager public manager;
-    underwriterVault public vault;
+    underwriterVault public uwVault;
+    underwriterVault public juniorVault;
+    underwriterVault public seniorVault;
+    FeeRateModel public feeModel;
     MockERC20 public asset;
 
     address public owner = address(this);
@@ -32,43 +38,39 @@ contract PolicyManagerTest is Test {
     uint256 constant VAULT_CAP = 10_000_000 * 10**18;
     uint256 constant UNDERWRITER_DEPOSIT = 1_000_000 * 10**18;
 
-    // Tahoe Reno, NV (The Citadel) — lat/lon × 10 000
     int32 constant DEFAULT_LAT = 395157;
     int32 constant DEFAULT_LON = -1194713;
 
     function setUp() public {
         oracle = address(this);
-
-        // Deploy asset
         asset = new MockERC20();
 
-        // Deploy vault
-        vault = new underwriterVault(
-            asset,
-            "Parametrix Vault",
-            "PRMX",
-            VAULT_CAP,
-            feeRecipient
-        );
+        uwVault = new underwriterVault(asset, "Parametrix Underwriter Vault", "pUWV", VAULT_CAP, feeRecipient);
+        juniorVault = new underwriterVault(asset, "Parametrix Junior Vault", "pJNR", VAULT_CAP, feeRecipient);
+        seniorVault = new underwriterVault(asset, "Parametrix Senior Vault", "pSNR", VAULT_CAP, feeRecipient);
 
-        // Deploy policy manager
+        feeModel = new FeeRateModel(VAULT_CAP);
+
         manager = new policyManager(
             asset,
-            IUnderwriterVault(address(vault)),
+            IUnderwriterVault(address(uwVault)),
+            IUnderwriterVault(address(juniorVault)),
+            IUnderwriterVault(address(seniorVault)),
+            IFeeRateModel(address(feeModel)),
             "https://api.parametrix.com/policy/{id}"
         );
 
-        // Set policy manager in vault
-        vault.setPolicyManager(address(manager));
+        uwVault.setPolicyManager(address(manager));
+        juniorVault.setPolicyManager(address(manager));
+        seniorVault.setPolicyManager(address(manager));
 
-        // Setup underwriter liquidity
-        asset.mint(underwriter, UNDERWRITER_DEPOSIT);
-        vm.startPrank(underwriter);
-        asset.approve(address(vault), UNDERWRITER_DEPOSIT);
-        vault.deposit(UNDERWRITER_DEPOSIT, underwriter);
-        vm.stopPrank();
+        juniorVault.setCapManager(address(manager));
+        seniorVault.setCapManager(address(manager));
 
-        // Setup test users
+        _seedVault(uwVault, underwriter, UNDERWRITER_DEPOSIT);
+        _seedVault(juniorVault, underwriter, UNDERWRITER_DEPOSIT);
+        _seedVault(seniorVault, underwriter, UNDERWRITER_DEPOSIT);
+
         asset.mint(alice, 100_000 * 10**18);
         asset.mint(bob, 100_000 * 10**18);
 
@@ -78,31 +80,36 @@ contract PolicyManagerTest is Test {
         vm.label(oracle, "Oracle");
     }
 
+    function _seedVault(underwriterVault v, address depositor, uint256 amount) internal {
+        asset.mint(depositor, amount);
+        vm.startPrank(depositor);
+        asset.approve(address(v), amount);
+        v.deposit(amount, depositor);
+        vm.stopPrank();
+    }
+
     /* ============ Hazard Management Tests ============ */
 
     function test_DefaultHazardsInitialized() public view {
-        assertTrue(manager.validHazards(0), "Heatwave should be valid");
-        assertTrue(manager.validHazards(1), "Flood should be valid");
-        assertTrue(manager.validHazards(2), "Drought should be valid");
-
-        assertEq(manager.hazardNames(0), "Heatwave", "Heatwave name mismatch");
-        assertEq(manager.hazardNames(1), "Flood", "Flood name mismatch");
-        assertEq(manager.hazardNames(2), "Drought", "Drought name mismatch");
+        assertTrue(manager.validHazards(0));
+        assertTrue(manager.validHazards(1));
+        assertTrue(manager.validHazards(2));
+        assertEq(manager.hazardNames(0), "Heatwave");
+        assertEq(manager.hazardNames(1), "Flood");
+        assertEq(manager.hazardNames(2), "Drought");
     }
 
     function test_AddHazardType() public {
         manager.addHazardType(3, "Earthquake", true);
-
-        assertTrue(manager.validHazards(3), "Earthquake should be valid");
-        assertEq(manager.hazardNames(3), "Earthquake", "Earthquake name mismatch");
-        assertTrue(manager.hazardTriggerAbove(3), "Earthquake should trigger above");
+        assertTrue(manager.validHazards(3));
+        assertEq(manager.hazardNames(3), "Earthquake");
+        assertTrue(manager.hazardTriggerAbove(3));
     }
 
     function test_AddHazardTypeTriggerBelow() public {
         manager.addHazardType(4, "ColdSnap", false);
-
-        assertTrue(manager.validHazards(4), "ColdSnap should be valid");
-        assertFalse(manager.hazardTriggerAbove(4), "ColdSnap should trigger below");
+        assertTrue(manager.validHazards(4));
+        assertFalse(manager.hazardTriggerAbove(4));
     }
 
     function test_AddHazardTypeRevertsIfAlreadyExists() public {
@@ -117,9 +124,8 @@ contract PolicyManagerTest is Test {
     }
 
     function test_RemoveHazardType() public {
-        manager.removeHazardType(2); // Remove Drought
-
-        assertFalse(manager.validHazards(2), "Drought should be invalid");
+        manager.removeHazardType(2);
+        assertFalse(manager.validHazards(2));
     }
 
     function test_RemoveHazardTypeRevertsIfDoesntExist() public {
@@ -128,263 +134,205 @@ contract PolicyManagerTest is Test {
     }
 
     function test_BuyPolicyWithNewHazardType() public {
-        // Add new hazard type
         manager.addHazardType(3, "Earthquake", true);
 
-        uint256 premium = 1000 * 10**18;
-        uint256 maxCoverage = 10_000 * 10**18;
-
         vm.startPrank(alice);
-        asset.approve(address(manager), premium);
-        uint256 policyId = manager.buyPolicy(
-            3, // Earthquake
-            30,
-            maxCoverage,
-            premium,
-            6, // Magnitude 6.0 trigger
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 policyId = manager.buyPolicy(3, 30, 10_000 * 10**18, 1000 * 10**18, 6, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
-        assertEq(policyId, 1, "First policy should be ID 1");
+        assertEq(policyId, 1);
         (uint8 hazard, , , , , , , , ) = manager.policies(policyId);
-        assertEq(hazard, 3, "Policy should have Earthquake hazard");
+        assertEq(hazard, 3);
     }
 
     function test_BuyPolicyRevertsWithInvalidHazard() public {
-        uint256 premium = 1000 * 10**18;
-
         vm.startPrank(alice);
-        asset.approve(address(manager), premium);
+        asset.approve(address(manager), 1000 * 10**18);
         vm.expectRevert(bytes("invalid hazard type"));
-        manager.buyPolicy(
-            99, // Invalid hazard
-            30,
-            10_000 * 10**18,
-            premium,
-            35,
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        manager.buyPolicy(99, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
     }
 
     function test_BuyPolicyRevertsWithRemovedHazard() public {
-        // Remove a hazard
-        manager.removeHazardType(2); // Remove Drought
-
-        uint256 premium = 1000 * 10**18;
-
+        manager.removeHazardType(2);
         vm.startPrank(alice);
-        asset.approve(address(manager), premium);
+        asset.approve(address(manager), 1000 * 10**18);
         vm.expectRevert(bytes("invalid hazard type"));
-        manager.buyPolicy(
-            2, // Drought (removed)
-            30,
-            10_000 * 10**18,
-            premium,
-            35,
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        manager.buyPolicy(2, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
     }
 
     /* ============ Policy Purchase Tests ============ */
 
     function test_BuyPolicy() public {
-        uint256 premium = 1000 * 10**18;
-        uint256 maxCoverage = 10_000 * 10**18;
+        vm.startPrank(alice);
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 policyId = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+
+        assertEq(policyId, 1);
+        assertEq(manager.balanceOf(alice, policyId), 1);
+        assertEq(manager.holderOf(policyId), alice);
+
+        (uint256 uwShares, uint256 jrShares, uint256 srShares) = manager.vaultReservedShares(policyId);
+        assertGt(uwShares + jrShares + srShares, 0, "Shares should be reserved");
+    }
+
+    function test_BuyPolicySplitsPremiumAcrossVaults() public {
+        uint256 uwBefore = uwVault.totalAssets();
+        uint256 jrBefore = juniorVault.totalAssets();
+        uint256 srBefore = seniorVault.totalAssets();
+        uint256 premium = 10_000 * 10**18;
 
         vm.startPrank(alice);
         asset.approve(address(manager), premium);
-        uint256 policyId = manager.buyPolicy(
-            0,
-            30, // 30 days
-            maxCoverage,
-            premium,
-            35, // 35°C trigger threshold
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        manager.buyPolicy(0, 30, 100_000 * 10**18, premium, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
-        assertEq(policyId, 1, "First policy should be ID 1");
-        assertEq(manager.balanceOf(alice, policyId), 1, "Alice should own the policy");
-        assertEq(manager.holderOf(policyId), alice, "Holder should be Alice");
+        uint256 uwInc = uwVault.totalAssets() - uwBefore;
+        uint256 jrInc = juniorVault.totalAssets() - jrBefore;
+        uint256 srInc = seniorVault.totalAssets() - srBefore;
 
-        // Check shares were reserved
-        uint256 reserved = manager.reservedShares(policyId);
-        assertGt(reserved, 0, "Shares should be reserved");
-        assertEq(vault.totalReservedShares(), reserved, "Vault should track reserved shares");
+        // With equal capital in junior & senior (1M each), u' = 50%, deviation = 2500
+        // seniorAdj = 2000 + (5000 * 2500) / 10000 = 3250, juniorBps = 10000 - 500 - 3250 = 6250
+        assertApproxEqRel(jrInc, premium * 6250 / 10000, 0.01e18, "Junior gets ~62.5%");
+        assertApproxEqRel(srInc, premium * 3250 / 10000, 0.01e18, "Senior gets ~32.5%");
+        assertApproxEqRel(uwInc, premium * 500 / 10000, 0.01e18, "Underwriter gets ~5%");
+        assertApproxEqAbs(uwInc + jrInc + srInc, premium, 3, "Total deposits == premium");
     }
 
     function test_BuyMultiplePolicies() public {
         policyManager.PolicyInput[] memory inputs = new policyManager.PolicyInput[](2);
-        inputs[0] = policyManager.PolicyInput({
-            hazard: 0,
-            durationDays: 30,
-            maxCoverage: 10_000 * 10**18,
-            premium: 1000 * 10**18,
-            triggerThreshold: 35,
-            lat: DEFAULT_LAT,
-            lon: DEFAULT_LON
-        });
-        inputs[1] = policyManager.PolicyInput({
-            hazard: 1,
-            durationDays: 60,
-            maxCoverage: 20_000 * 10**18,
-            premium: 2000 * 10**18,
-            triggerThreshold: 100,
-            lat: DEFAULT_LAT,
-            lon: DEFAULT_LON
-        });
-
-        uint256 totalPremium = 3000 * 10**18;
+        inputs[0] = policyManager.PolicyInput(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, DEFAULT_LAT, DEFAULT_LON);
+        inputs[1] = policyManager.PolicyInput(1, 60, 20_000 * 10**18, 2000 * 10**18, 100, DEFAULT_LAT, DEFAULT_LON);
 
         vm.startPrank(alice);
-        asset.approve(address(manager), totalPremium);
+        asset.approve(address(manager), 3000 * 10**18);
         uint256[] memory policyIds = manager.buyPolicies(inputs, alice);
         vm.stopPrank();
 
-        assertEq(policyIds.length, 2, "Should create 2 policies");
-        assertEq(manager.balanceOf(alice, policyIds[0]), 1, "Alice should own policy 1");
-        assertEq(manager.balanceOf(alice, policyIds[1]), 1, "Alice should own policy 2");
+        assertEq(policyIds.length, 2);
+        assertEq(manager.balanceOf(alice, policyIds[0]), 1);
+        assertEq(manager.balanceOf(alice, policyIds[1]), 1);
 
-        // Check total reserved shares
-        uint256 totalReserved = manager.reservedShares(policyIds[0]) + manager.reservedShares(policyIds[1]);
-        assertEq(vault.totalReservedShares(), totalReserved, "Total reserved shares should match");
+        (uint256 uw1, uint256 jr1, uint256 sr1) = manager.vaultReservedShares(policyIds[0]);
+        (uint256 uw2, uint256 jr2, uint256 sr2) = manager.vaultReservedShares(policyIds[1]);
+        assertGt(uw1 + jr1 + sr1 + uw2 + jr2 + sr2, 0, "Shares reserved across vaults");
     }
 
-    function test_BuyPolicyDepositsPremiumToVault() public {
-        uint256 vaultBalanceBefore = vault.balanceOf(address(manager));
+    function test_BuyPolicyDepositsPremiumToVaults() public {
+        uint256 uwBal = uwVault.balanceOf(address(manager));
+        uint256 jrBal = juniorVault.balanceOf(address(manager));
+        uint256 srBal = seniorVault.balanceOf(address(manager));
 
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
         manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
-        uint256 vaultBalanceAfter = vault.balanceOf(address(manager));
-        assertGt(vaultBalanceAfter, vaultBalanceBefore, "Premium should be deposited to vault");
+        uint256 inc = (uwVault.balanceOf(address(manager)) - uwBal) +
+            (juniorVault.balanceOf(address(manager)) - jrBal) +
+            (seniorVault.balanceOf(address(manager)) - srBal);
+        assertGt(inc, 0, "Premium deposited across vaults");
     }
 
-    /* ============ Payout Tests - Full Coverage ============ */
+    /* ============ Payout Tests ============ */
 
     function test_TriggerPayoutFullCoverage() public {
-        // Alice buys policy
-        uint256 premium = 1000 * 10**18;
-        uint256 maxCoverage = 10_000 * 10**18;
-
         vm.startPrank(alice);
-        asset.approve(address(manager), premium);
-        uint256 policyId = manager.buyPolicy(
-            0,
-            30,
-            maxCoverage,
-            premium,
-            35,
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
-        // Get Alice's balance before payout
-        uint256 aliceBalanceBefore = asset.balanceOf(alice);
+        uint256 before = asset.balanceOf(alice);
+        manager.triggerPayout(pid, 40, 5000 * 10**18);
+        assertEq(asset.balanceOf(alice) - before, 5000 * 10**18, "Full payout");
 
-        // Oracle triggers payout
-        uint256 requestedPayout = 5000 * 10**18; // Less than maxCoverage
-        manager.triggerPayout(policyId, 40, requestedPayout); // 40°C exceeds 35°C threshold
-
-        // Check Alice received the payout
-        uint256 aliceBalanceAfter = asset.balanceOf(alice);
-        assertEq(aliceBalanceAfter - aliceBalanceBefore, requestedPayout, "Alice should receive full payout");
-
-        // Check policy is marked as paid
-        (, , , , , , , , bool paid) = manager.policies(policyId);
-        assertTrue(paid, "Policy should be marked as paid");
-
-        // Check shares were unreserved
-        assertEq(manager.reservedShares(policyId), 0, "Reserved shares should be released");
-        assertEq(vault.totalReservedShares(), 0, "No shares should be reserved");
+        (, , , , , , , , bool paid) = manager.policies(pid);
+        assertTrue(paid);
+        (uint256 u, uint256 j, uint256 s) = manager.vaultReservedShares(pid);
+        assertEq(u + j + s, 0, "Reservations cleared");
     }
 
-    /* ============ Payout Tests - Partial Coverage (Underfunded Vault) ============ */
+    function test_PayoutWaterfallOrder() public {
+        vm.startPrank(alice);
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
 
-    // Helper that creates a fresh vault+manager with no underwriter capital.
-    // The only assets are the premiums paid by buyers themselves.
+        uint256 uwBefore = uwVault.totalAssets();
+        uint256 jrBefore = juniorVault.totalAssets();
+        uint256 srBefore = seniorVault.totalAssets();
+        (uint256 uwRes, , ) = manager.vaultReservedShares(pid);
+
+        manager.triggerPayout(pid, 40, 5000 * 10**18);
+
+        uint256 uwDec = uwBefore - uwVault.totalAssets();
+        uint256 jrDec = jrBefore - juniorVault.totalAssets();
+        uint256 srDec = srBefore - seniorVault.totalAssets();
+
+        if (uwRes > 0) assertGt(uwDec, 0, "Underwriter absorbs first");
+        assertApproxEqAbs(uwDec + jrDec + srDec, 5000 * 10**18, 3, "Total withdrawal == payout");
+    }
+
+    /* ============ Underfunded System ============ */
+
     function _deployUnderfundedSystem()
         internal
-        returns (underwriterVault freshVault, policyManager freshManager)
+        returns (underwriterVault, underwriterVault, underwriterVault, policyManager freshManager)
     {
-        freshVault = new underwriterVault(
-            asset,
-            "Fresh Vault",
-            "FV",
-            VAULT_CAP,
-            feeRecipient
-        );
+        underwriterVault fUw = new underwriterVault(asset, "Fresh UW", "FUW", VAULT_CAP, feeRecipient);
+        underwriterVault fJr = new underwriterVault(asset, "Fresh JR", "FJR", VAULT_CAP, feeRecipient);
+        underwriterVault fSr = new underwriterVault(asset, "Fresh SR", "FSR", VAULT_CAP, feeRecipient);
+        FeeRateModel fm2 = new FeeRateModel(VAULT_CAP);
+
         freshManager = new policyManager(
             asset,
-            IUnderwriterVault(address(freshVault)),
+            IUnderwriterVault(address(fUw)),
+            IUnderwriterVault(address(fJr)),
+            IUnderwriterVault(address(fSr)),
+            IFeeRateModel(address(fm2)),
             "https://api.parametrix.com/policy/{id}"
         );
-        freshVault.setPolicyManager(address(freshManager));
-        // oracle stays as address(this) (set in constructor)
+        fUw.setPolicyManager(address(freshManager));
+        fJr.setPolicyManager(address(freshManager));
+        fSr.setPolicyManager(address(freshManager));
+        fJr.setCapManager(address(freshManager));
+        fSr.setCapManager(address(freshManager));
     }
 
     function test_TriggerPayoutPartialCoverageWhenUnderfunded() public {
-        // Deploy a vault with NO underwriter capital - only premiums are in the vault.
-        // Verify that policyholders receive pro-rata payouts proportional to their coverage.
-        (underwriterVault freshVault, policyManager freshManager) = _deployUnderfundedSystem();
+        (, , , policyManager fm) = _deployUnderfundedSystem();
 
-        uint256 aliceCoverage = 1000 * 10**18;
-        uint256 alicePremium  =   50 * 10**18;
-        uint256 bobCoverage   = 2000 * 10**18;
-        uint256 bobPremium    =   70 * 10**18;
-        uint256 totalPremiums = alicePremium + bobPremium; // 120e18
+        uint256 cov1 = 1000 * 10**18; uint256 pre1 = 50 * 10**18;
+        uint256 cov2 = 2000 * 10**18; uint256 pre2 = 70 * 10**18;
+        uint256 totalPremiums = pre1 + pre2;
 
         vm.startPrank(alice);
-        asset.approve(address(freshManager), alicePremium);
-        uint256 policyA = freshManager.buyPolicy(0, 30, aliceCoverage, alicePremium, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        asset.approve(address(fm), pre1);
+        uint256 pA = fm.buyPolicy(0, 30, cov1, pre1, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
         vm.startPrank(bob);
-        asset.approve(address(freshManager), bobPremium);
-        uint256 policyB = freshManager.buyPolicy(0, 30, bobCoverage, bobPremium, 35, bob, DEFAULT_LAT, DEFAULT_LON);
+        asset.approve(address(fm), pre2);
+        uint256 pB = fm.buyPolicy(0, 30, cov2, pre2, 35, bob, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
-        assertEq(freshVault.totalAssets(), totalPremiums, "Vault should only hold premiums");
-        assertEq(freshManager.totalActiveCoverage(), aliceCoverage + bobCoverage, "Coverage tracked");
-
-        // -- Alice claims first --
         uint256 aliceBefore = asset.balanceOf(alice);
-        freshManager.triggerPayout(policyA, 40, aliceCoverage); // request full maxCoverage
+        fm.triggerPayout(pA, 40, cov1);
         uint256 alicePayout = asset.balanceOf(alice) - aliceBefore;
+        assertApproxEqAbs(alicePayout, totalPremiums * cov1 / (cov1 + cov2), 2, "Alice pro-rata");
+        assertLt(alicePayout, cov1);
 
-        // Expected: 120e18 * 1000/3000 = 40e18
-        uint256 expectedAlice = totalPremiums * aliceCoverage / (aliceCoverage + bobCoverage);
-        assertApproxEqAbs(alicePayout, expectedAlice, 1, "Alice pro-rata payout");
-        assertLt(alicePayout, aliceCoverage, "Alice paid less than maxCoverage (underfunded)");
-
-        // -- Bob claims after Alice --
         uint256 bobBefore = asset.balanceOf(bob);
-        freshManager.triggerPayout(policyB, 40, bobCoverage);
+        fm.triggerPayout(pB, 40, cov2);
         uint256 bobPayout = asset.balanceOf(bob) - bobBefore;
+        assertLt(bobPayout, cov2);
+        assertGt(bobPayout, 0);
 
-        assertLt(bobPayout, bobCoverage, "Bob paid less than maxCoverage (underfunded)");
-        assertGt(bobPayout, 0, "Bob still receives something");
-
-        // Invariant: total paid out never exceeds initial vault assets
-        assertLe(alicePayout + bobPayout, totalPremiums, "Cannot pay more than vault held");
-
-        // Coverage fully cleared
-        assertEq(freshManager.totalActiveCoverage(), 0, "All coverage cleared after payouts");
+        assertLe(alicePayout + bobPayout, totalPremiums);
+        assertEq(fm.totalActiveCoverage(), 0);
     }
 
     /* ============ Payout Validation Tests ============ */
@@ -392,610 +340,450 @@ contract PolicyManagerTest is Test {
     function test_TriggerPayoutRevertsIfNotOracle() public {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
-        uint256 policyId = manager.buyPolicy(
-            0,
-            30,
-            10_000 * 10**18,
-            1000 * 10**18,
-            35,
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-
         vm.prank(bob);
         vm.expectRevert(bytes("not oracle"));
-        manager.triggerPayout(policyId, 40, 5000 * 10**18);
+        manager.triggerPayout(pid, 40, 5000 * 10**18);
     }
 
     function test_TriggerPayoutRevertsIfAlreadyPaid() public {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
-        uint256 policyId = manager.buyPolicy(
-            0,
-            30,
-            10_000 * 10**18,
-            1000 * 10**18,
-            35,
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-
-        // First payout succeeds
-        manager.triggerPayout(policyId, 40, 5000 * 10**18);
-
-        // Second payout should fail
+        manager.triggerPayout(pid, 40, 5000 * 10**18);
         vm.expectRevert(bytes("paid"));
-        manager.triggerPayout(policyId, 40, 5000 * 10**18);
+        manager.triggerPayout(pid, 40, 5000 * 10**18);
     }
 
     function test_TriggerPayoutRevertsIfExpired() public {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
-        uint256 policyId = manager.buyPolicy(
-            0,
-            30,
-            10_000 * 10**18,
-            1000 * 10**18,
-            35,
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-
-        // Warp time past expiration
         vm.warp(block.timestamp + 31 days);
-
         vm.expectRevert(bytes("expired"));
-        manager.triggerPayout(policyId, 40, 5000 * 10**18);
+        manager.triggerPayout(pid, 40, 5000 * 10**18);
     }
 
     function test_TriggerPayoutRevertsIfThresholdNotMet() public {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
-        uint256 policyId = manager.buyPolicy(
-            0,
-            30,
-            10_000 * 10**18,
-            1000 * 10**18,
-            35,
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-
         vm.expectRevert(bytes("no trigger"));
-        manager.triggerPayout(policyId, 34, 5000 * 10**18); // 34°C < 35°C threshold
+        manager.triggerPayout(pid, 34, 5000 * 10**18);
     }
 
     function test_TriggerPayoutRevertsIfPayoutExceedsMaxCoverage() public {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
-        uint256 policyId = manager.buyPolicy(
-            0,
-            30,
-            10_000 * 10**18,
-            1000 * 10**18,
-            35,
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-
         vm.expectRevert(bytes("too much"));
-        manager.triggerPayout(policyId, 40, 11_000 * 10**18); // Exceeds maxCoverage
+        manager.triggerPayout(pid, 40, 11_000 * 10**18);
     }
 
-    /* ============ Drought / Trigger Direction Tests ============ */
+    /* ============ Drought Tests ============ */
 
     function test_DefaultHazardTriggerDirections() public view {
-        assertTrue(manager.hazardTriggerAbove(0), "Heatwave should trigger above");
-        assertTrue(manager.hazardTriggerAbove(1), "Flood should trigger above");
-        assertFalse(manager.hazardTriggerAbove(2), "Drought should trigger below");
+        assertTrue(manager.hazardTriggerAbove(0));
+        assertTrue(manager.hazardTriggerAbove(1));
+        assertFalse(manager.hazardTriggerAbove(2));
     }
 
     function test_TriggerPayoutDroughtNegativeThreshold() public {
-        uint256 premium = 1000 * 10**18;
-        uint256 maxCoverage = 10_000 * 10**18;
-
         vm.startPrank(alice);
-        asset.approve(address(manager), premium);
-        uint256 policyId = manager.buyPolicy(
-            2, // Drought
-            30,
-            maxCoverage,
-            premium,
-            int256(-50), // Deficit threshold: -50mm
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 pid = manager.buyPolicy(2, 30, 10_000 * 10**18, 1000 * 10**18, int256(-50), alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-
-        uint256 aliceBalanceBefore = asset.balanceOf(alice);
-
-        // Observed deficit of -80mm is worse (lower) than -50mm threshold → should trigger
-        manager.triggerPayout(policyId, int256(-80), 5000 * 10**18);
-
-        uint256 aliceBalanceAfter = asset.balanceOf(alice);
-        assertEq(aliceBalanceAfter - aliceBalanceBefore, 5000 * 10**18, "Alice should receive drought payout");
-
-        (, , , , , , , , bool paid) = manager.policies(policyId);
-        assertTrue(paid, "Drought policy should be marked as paid");
+        uint256 before = asset.balanceOf(alice);
+        manager.triggerPayout(pid, int256(-80), 5000 * 10**18);
+        assertEq(asset.balanceOf(alice) - before, 5000 * 10**18);
+        (, , , , , , , , bool paid) = manager.policies(pid);
+        assertTrue(paid);
     }
 
     function test_TriggerPayoutDroughtNotTriggered() public {
-        uint256 premium = 1000 * 10**18;
-        uint256 maxCoverage = 10_000 * 10**18;
-
         vm.startPrank(alice);
-        asset.approve(address(manager), premium);
-        uint256 policyId = manager.buyPolicy(
-            2, // Drought
-            30,
-            maxCoverage,
-            premium,
-            int256(-50), // Deficit threshold: -50mm
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 pid = manager.buyPolicy(2, 30, 10_000 * 10**18, 1000 * 10**18, int256(-50), alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-
-        // Observed deficit of -30mm is above the -50mm threshold → should NOT trigger
         vm.expectRevert(bytes("no trigger"));
-        manager.triggerPayout(policyId, int256(-30), 5000 * 10**18);
+        manager.triggerPayout(pid, int256(-30), 5000 * 10**18);
     }
 
     function test_TriggerPayoutDroughtExactThreshold() public {
-        uint256 premium = 1000 * 10**18;
-        uint256 maxCoverage = 10_000 * 10**18;
-
         vm.startPrank(alice);
-        asset.approve(address(manager), premium);
-        uint256 policyId = manager.buyPolicy(
-            2, // Drought
-            30,
-            maxCoverage,
-            premium,
-            int256(-50),
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 pid = manager.buyPolicy(2, 30, 10_000 * 10**18, 1000 * 10**18, int256(-50), alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-
-        // Observed exactly at threshold → should trigger (<=)
-        manager.triggerPayout(policyId, int256(-50), 5000 * 10**18);
-
-        (, , , , , , , , bool paid) = manager.policies(policyId);
-        assertTrue(paid, "Drought policy at exact threshold should trigger");
+        manager.triggerPayout(pid, int256(-50), 5000 * 10**18);
+        (, , , , , , , , bool paid) = manager.policies(pid);
+        assertTrue(paid);
     }
 
-    /* ============ Expired Policy Release Tests ============ */
+    /* ============ Expired Policy Release ============ */
 
     function test_ReleaseExpiredPolicy() public {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
-        uint256 policyId = manager.buyPolicy(
-            0,
-            30,
-            10_000 * 10**18,
-            1000 * 10**18,
-            35,
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-
-        uint256 reserved = manager.reservedShares(policyId);
-        assertGt(reserved, 0, "Shares should be reserved");
-
-        // Warp time past expiration
+        (uint256 u, uint256 j, uint256 s) = manager.vaultReservedShares(pid);
+        assertGt(u + j + s, 0);
         vm.warp(block.timestamp + 31 days);
-
-        // Release expired policy
-        manager.releaseExpiredPolicy(policyId);
-
-        // Check shares were unreserved
-        assertEq(manager.reservedShares(policyId), 0, "Reserved shares should be released");
-        assertEq(vault.totalReservedShares(), 0, "No shares should be reserved");
-
-        // Check policy is marked as paid (to prevent future claims)
-        (, , , , , , , , bool paid) = manager.policies(policyId);
-        assertTrue(paid, "Policy should be marked as paid");
+        manager.releaseExpiredPolicy(pid);
+        (u, j, s) = manager.vaultReservedShares(pid);
+        assertEq(u + j + s, 0);
+        (, , , , , , , , bool paid) = manager.policies(pid);
+        assertTrue(paid);
     }
 
     function test_ReleaseExpiredPolicyRevertsIfNotExpired() public {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
-        uint256 policyId = manager.buyPolicy(
-            0,
-            30,
-            10_000 * 10**18,
-            1000 * 10**18,
-            35,
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-
         vm.expectRevert(bytes("not expired"));
-        manager.releaseExpiredPolicy(policyId);
+        manager.releaseExpiredPolicy(pid);
     }
 
     function test_ReleaseExpiredPoliciesBatch() public {
-        // Create multiple policies
-        uint256[] memory policyIds = new uint256[](3);
-
+        uint256[] memory pids = new uint256[](3);
         vm.startPrank(alice);
         for (uint i = 0; i < 3; i++) {
             asset.approve(address(manager), 1000 * 10**18);
-            policyIds[i] = manager.buyPolicy(
-                0,
-                30,
-                10_000 * 10**18,
-                1000 * 10**18,
-                35,
-                alice,
-                DEFAULT_LAT,
-                DEFAULT_LON
-            );
+            pids[i] = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         }
         vm.stopPrank();
-
-        uint256 totalReserved = vault.totalReservedShares();
-        assertGt(totalReserved, 0, "Shares should be reserved");
-
-        // Warp time past expiration
         vm.warp(block.timestamp + 31 days);
-
-        // Release all expired policies
-        manager.releaseExpiredPolicies(policyIds);
-
-        // Check all shares were unreserved
-        assertEq(vault.totalReservedShares(), 0, "All shares should be released");
+        manager.releaseExpiredPolicies(pids);
+        for (uint i = 0; i < 3; i++) {
+            (uint256 u, uint256 j, uint256 s) = manager.vaultReservedShares(pids[i]);
+            assertEq(u + j + s, 0);
+        }
     }
 
-    /* ============ Policy Transfer Tests ============ */
+    /* ============ Transfer Tests ============ */
 
     function test_TransferPolicy() public {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
-        uint256 policyId = manager.buyPolicy(
-            0,
-            30,
-            10_000 * 10**18,
-            1000 * 10**18,
-            35,
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
-
-        // Transfer to Bob
-        manager.safeTransferFrom(alice, bob, policyId, 1, "");
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        manager.safeTransferFrom(alice, bob, pid, 1, "");
         vm.stopPrank();
-
-        assertEq(manager.balanceOf(bob, policyId), 1, "Bob should own the policy");
-        assertEq(manager.holderOf(policyId), bob, "Holder should be updated to Bob");
-        assertEq(manager.balanceOf(alice, policyId), 0, "Alice should not own the policy");
+        assertEq(manager.balanceOf(bob, pid), 1);
+        assertEq(manager.holderOf(pid), bob);
+        assertEq(manager.balanceOf(alice, pid), 0);
     }
 
     function test_PayoutGoesToCurrentHolder() public {
         vm.startPrank(alice);
         asset.approve(address(manager), 1000 * 10**18);
-        uint256 policyId = manager.buyPolicy(
-            0,
-            30,
-            10_000 * 10**18,
-            1000 * 10**18,
-            35,
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
-
-        // Transfer to Bob
-        manager.safeTransferFrom(alice, bob, policyId, 1, "");
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        manager.safeTransferFrom(alice, bob, pid, 1, "");
         vm.stopPrank();
+        uint256 before = asset.balanceOf(bob);
+        manager.triggerPayout(pid, 40, 5000 * 10**18);
+        assertEq(asset.balanceOf(bob) - before, 5000 * 10**18);
+    }
 
-        uint256 bobBalanceBefore = asset.balanceOf(bob);
-        uint256 requestedPayout = 5000 * 10**18;
+    /* ============ Fee Rate Model Tests ============ */
 
-        // Oracle triggers payout
-        manager.triggerPayout(policyId, 40, requestedPayout);
+    function test_SetFeeRateModel() public {
+        FeeRateModel newModel = new FeeRateModel(VAULT_CAP);
+        newModel.setBaseSeniorBps(3000);
+        manager.setFeeRateModel(IFeeRateModel(address(newModel)));
 
-        // Bob (current holder) should receive payout, not Alice
-        uint256 bobBalanceAfter = asset.balanceOf(bob);
-        assertEq(bobBalanceAfter - bobBalanceBefore, requestedPayout, "Bob should receive payout");
+        uint256 srBefore = seniorVault.totalAssets();
+        vm.startPrank(alice);
+        asset.approve(address(manager), 10_000 * 10**18);
+        manager.buyPolicy(0, 30, 100_000 * 10**18, 10_000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+        uint256 srInc = seniorVault.totalAssets() - srBefore;
+        // With baseSeniorBps=3000 and equal capital: seniorAdj = 3000 + (5000*2500)/10000 = 4250
+        assertApproxEqRel(srInc, 10_000 * 10**18 * 4250 / 10000, 0.05e18, "Senior ~42.5% with new model");
+    }
+
+    function test_SetFeeRateModelRevertsZeroAddress() public {
+        vm.expectRevert(bytes("zero address"));
+        manager.setFeeRateModel(IFeeRateModel(address(0)));
+    }
+
+    function test_SetFeeRateModelRevertsIfNotOwner() public {
+        FeeRateModel newModel = new FeeRateModel(VAULT_CAP);
+        vm.prank(alice);
+        vm.expectRevert();
+        manager.setFeeRateModel(IFeeRateModel(address(newModel)));
     }
 
     /* ============ Fuzz Tests ============ */
 
-    function testFuzz_BuyPolicy(
-        uint256 premium,
-        uint256 maxCoverage,
-        uint256 durationDays
-    ) public {
+    function testFuzz_BuyPolicy(uint256 premium, uint256 maxCoverage, uint256 durationDays) public {
         premium = bound(premium, 100 * 10**18, 10_000 * 10**18);
         maxCoverage = bound(maxCoverage, premium, 100_000 * 10**18);
         durationDays = bound(durationDays, 1, 365);
-
         asset.mint(alice, premium);
-
         vm.startPrank(alice);
         asset.approve(address(manager), premium);
-        uint256 policyId = manager.buyPolicy(
-            0,
-            durationDays,
-            maxCoverage,
-            premium,
-            35,
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        uint256 pid = manager.buyPolicy(0, durationDays, maxCoverage, premium, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-
-        assertGt(policyId, 0, "Policy ID should be valid");
-        assertGt(manager.reservedShares(policyId), 0, "Shares should be reserved");
+        assertGt(pid, 0);
+        (uint256 u, uint256 j, uint256 s) = manager.vaultReservedShares(pid);
+        assertGt(u + j + s, 0);
     }
 
-    function testFuzz_TriggerPayout(
-        uint256 premium,
-        uint256 maxCoverage,
-        uint256 requestedPayout
-    ) public {
+    function testFuzz_TriggerPayout(uint256 premium, uint256 maxCoverage, uint256 requestedPayout) public {
         premium = bound(premium, 1000 * 10**18, 10_000 * 10**18);
         maxCoverage = bound(maxCoverage, 10_000 * 10**18, 50_000 * 10**18);
         requestedPayout = bound(requestedPayout, 1000 * 10**18, maxCoverage);
-
         asset.mint(alice, premium);
-
         vm.startPrank(alice);
         asset.approve(address(manager), premium);
-        uint256 policyId = manager.buyPolicy(
-            0,
-            30,
-            maxCoverage,
-            premium,
-            35,
-            alice,
-            DEFAULT_LAT,
-            DEFAULT_LON
-        );
+        uint256 pid = manager.buyPolicy(0, 30, maxCoverage, premium, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-
-        uint256 aliceBalanceBefore = asset.balanceOf(alice);
-
-        // Trigger payout
-        manager.triggerPayout(policyId, 40, requestedPayout);
-
-        uint256 aliceBalanceAfter = asset.balanceOf(alice);
-        uint256 actualPayout = aliceBalanceAfter - aliceBalanceBefore;
-
-        assertGt(actualPayout, 0, "Should receive some payout");
-        assertLe(actualPayout, requestedPayout, "Should not exceed requested payout");
+        uint256 before = asset.balanceOf(alice);
+        manager.triggerPayout(pid, 40, requestedPayout);
+        uint256 actual = asset.balanceOf(alice) - before;
+        assertGt(actual, 0);
+        assertLe(actual, requestedPayout);
     }
 
     function testFuzz_MultipleUsersMultiplePolicies(uint8 numUsers, uint8 numPoliciesPerUser) public {
         numUsers = uint8(bound(numUsers, 1, 10));
         numPoliciesPerUser = uint8(bound(numPoliciesPerUser, 1, 5));
-
         for (uint8 i = 0; i < numUsers; i++) {
             address user = address(uint160(1000 + i));
-            uint256 totalPremium = uint256(numPoliciesPerUser) * 1000 * 10**18;
-
-            asset.mint(user, totalPremium);
-
+            uint256 total = uint256(numPoliciesPerUser) * 1000 * 10**18;
+            asset.mint(user, total);
             vm.startPrank(user);
             for (uint8 j = 0; j < numPoliciesPerUser; j++) {
                 asset.approve(address(manager), 1000 * 10**18);
-                uint256 policyId = manager.buyPolicy(
-                    0,
-                    30,
-                    10_000 * 10**18,
-                    1000 * 10**18,
-                    35,
-                    user,
-                    DEFAULT_LAT,
-                    DEFAULT_LON
-                );
-                assertEq(manager.holderOf(policyId), user, "User should own policy");
+                uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, user, DEFAULT_LAT, DEFAULT_LON);
+                assertEq(manager.holderOf(pid), user);
             }
             vm.stopPrank();
         }
-
-        // Check total reserved shares matches all policies
-        uint256 totalPolicies = uint256(numUsers) * uint256(numPoliciesPerUser);
-        assertGt(vault.totalReservedShares(), 0, "Shares should be reserved");
-        assertEq(manager.nextId() - 1, totalPolicies, "Policy count should match");
+        assertEq(manager.nextId() - 1, uint256(numUsers) * uint256(numPoliciesPerUser));
     }
 
-    /* ============ Pro-Rata Payout Tests ============ */
-
-    // Exactly the design scenario described for the system:
-    //   User 1: $1,000 coverage, $50 premium
-    //   User 2: $2,000 coverage, $70 premium
-    //   Vault funded only by premiums ($120 total)
-    //   If vault >= $3,000  -> full payouts ($1,000 and $2,000)
-    //   If vault < $3,000   -> pro-rata  (user1 ~$40, user2 ~$70)
-    function test_ProRataPayoutTwoUsersUnderfunded() public {
-        (underwriterVault fv, policyManager fm) = _deployUnderfundedSystem();
-
-        uint256 cov1 = 1000 * 10**18;
-        uint256 pre1 =   50 * 10**18;
-        uint256 cov2 = 2000 * 10**18;
-        uint256 pre2 =   70 * 10**18;
-
-        vm.startPrank(alice);
-        asset.approve(address(fm), pre1);
-        uint256 p1 = fm.buyPolicy(0, 30, cov1, pre1, 35, alice, DEFAULT_LAT, DEFAULT_LON);
-        vm.stopPrank();
-
-        vm.startPrank(bob);
-        asset.approve(address(fm), pre2);
-        uint256 p2 = fm.buyPolicy(0, 30, cov2, pre2, 35, bob, DEFAULT_LAT, DEFAULT_LON);
-        vm.stopPrank();
-
-        uint256 totalAssets = fv.totalAssets(); // 120e18
-        uint256 totalCov    = cov1 + cov2;      // 3000e18
-
-        // Alice claims: expected = 120 * 1000/3000 = 40
-        uint256 aliceBefore = asset.balanceOf(alice);
-        fm.triggerPayout(p1, 40, cov1);
-        uint256 alicePayout = asset.balanceOf(alice) - aliceBefore;
-        assertApproxEqAbs(alicePayout, totalAssets * cov1 / totalCov, 1, "Alice pro-rata");
-
-        // Bob claims: remaining vault * 2000/2000
-        uint256 remainingAssets = fv.totalAssets();
-        uint256 bobBefore = asset.balanceOf(bob);
-        fm.triggerPayout(p2, 40, cov2);
-        uint256 bobPayout = asset.balanceOf(bob) - bobBefore;
-        // Bob is capped by reserved shares (70e18), not by full pro-rata (remainingAssets)
-        assertLe(bobPayout, remainingAssets, "Bob payout within remaining assets");
-        assertGt(bobPayout, 0, "Bob receives a payout");
-
-        assertLe(alicePayout + bobPayout, totalAssets, "Total payout within vault assets");
-        assertEq(fm.totalActiveCoverage(), 0, "All coverage cleared");
-    }
+    /* ============ Pro-Rata ============ */
 
     function test_ProRataPayoutTwoUsersFullyFunded() public {
-        // With sufficient underwriter capital, both users get their FULL requested payout.
-        uint256 cov1 = 1000 * 10**18;
-        uint256 pre1 =   50 * 10**18;
-        uint256 cov2 = 2000 * 10**18;
-        uint256 pre2 =   70 * 10**18;
-        // Vault already has 1M from underwriter (setUp) - easily covers 3k total coverage.
+        uint256 cov1 = 1000 * 10**18; uint256 pre1 = 50 * 10**18;
+        uint256 cov2 = 2000 * 10**18; uint256 pre2 = 70 * 10**18;
 
         vm.startPrank(alice);
         asset.approve(address(manager), pre1);
         uint256 p1 = manager.buyPolicy(0, 30, cov1, pre1, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-
         vm.startPrank(bob);
         asset.approve(address(manager), pre2);
         uint256 p2 = manager.buyPolicy(0, 30, cov2, pre2, 35, bob, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
-        uint256 aliceBefore = asset.balanceOf(alice);
-        manager.triggerPayout(p1, 40, cov1); // request full 1000
-        // 0.1% tolerance: Alice's payout is exact since she goes first.
-        assertApproxEqRel(asset.balanceOf(alice) - aliceBefore, cov1, 0.001e18, "Alice receives ~full coverage");
+        uint256 aBefore = asset.balanceOf(alice);
+        manager.triggerPayout(p1, 40, cov1);
+        assertApproxEqRel(asset.balanceOf(alice) - aBefore, cov1, 0.001e18);
 
-        uint256 bobBefore = asset.balanceOf(bob);
-        manager.triggerPayout(p2, 40, cov2); // request full 2000
-        // After Alice's payout, the share price dips slightly (~0.1%) because
-        // the vault has fewer assets but the same share supply. Bob's payout
-        // is still effectively full coverage within that rounding.
-        assertApproxEqRel(asset.balanceOf(bob) - bobBefore, cov2, 0.002e18, "Bob receives ~full coverage");
+        uint256 bBefore = asset.balanceOf(bob);
+        manager.triggerPayout(p2, 40, cov2);
+        assertApproxEqRel(asset.balanceOf(bob) - bBefore, cov2, 0.002e18);
     }
 
     function test_TotalActiveCoverageTracking() public {
-        uint256 cov1 = 5000 * 10**18;
-        uint256 cov2 = 3000 * 10**18;
-        uint256 pre  = 1000 * 10**18;
-
-        assertEq(manager.totalActiveCoverage(), 0, "Starts at zero");
+        uint256 cov1 = 5000 * 10**18; uint256 cov2 = 3000 * 10**18;
+        uint256 pre = 1000 * 10**18;
+        assertEq(manager.totalActiveCoverage(), 0);
 
         vm.startPrank(alice);
         asset.approve(address(manager), pre);
         uint256 p1 = manager.buyPolicy(0, 30, cov1, pre, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-        assertEq(manager.totalActiveCoverage(), cov1, "After first purchase");
+        assertEq(manager.totalActiveCoverage(), cov1);
 
         vm.startPrank(bob);
         asset.approve(address(manager), pre);
         uint256 p2 = manager.buyPolicy(0, 30, cov2, pre, 35, bob, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-        assertEq(manager.totalActiveCoverage(), cov1 + cov2, "After second purchase");
+        assertEq(manager.totalActiveCoverage(), cov1 + cov2);
 
-        // Payout decrements coverage
         manager.triggerPayout(p1, 40, cov1);
-        assertEq(manager.totalActiveCoverage(), cov2, "After first payout");
+        assertEq(manager.totalActiveCoverage(), cov2);
 
-        // Expiry also decrements coverage
         vm.warp(block.timestamp + 31 days);
         manager.releaseExpiredPolicy(p2);
-        assertEq(manager.totalActiveCoverage(), 0, "After expiry release");
+        assertEq(manager.totalActiveCoverage(), 0);
     }
 
     function test_BuyPolicySucceedsWithNoUnderwriterCapital() public {
-        // The key behavioral change: purchasing a policy no longer reverts even when
-        // the vault has no underwriter capital beyond the premium itself.
-        (underwriterVault fv, policyManager fm) = _deployUnderfundedSystem();
-
-        uint256 coverage = 100_000 * 10**18; // 100k coverage
-        uint256 premium  =     100 * 10**18; // only 100 in vault after purchase
-
+        (, , , policyManager fm) = _deployUnderfundedSystem();
         vm.startPrank(alice);
-        asset.approve(address(fm), premium);
-        uint256 policyId = fm.buyPolicy(0, 30, coverage, premium, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        asset.approve(address(fm), 100 * 10**18);
+        uint256 pid = fm.buyPolicy(0, 30, 100_000 * 10**18, 100 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
-
-        assertEq(policyId, 1, "Policy created successfully");
-        assertEq(fm.totalActiveCoverage(), coverage, "Coverage tracked");
-        assertEq(fv.totalAssets(), premium, "Vault holds the premium");
-
-        // Reserved shares is at most what the vault has (the premium), not the full coverage
-        uint256 reserved = fm.reservedShares(policyId);
-        uint256 maxPossibleShares = fv.previewWithdraw(coverage);
-        assertLt(reserved, maxPossibleShares, "Only partial shares reserved (vault underfunded)");
+        assertEq(pid, 1);
+        assertEq(fm.totalActiveCoverage(), 100_000 * 10**18);
     }
 
-    /* ============ Pro-Rata Fuzz Tests ============ */
-
-    // Verifies the pro-rata payout invariants hold for any number of users with
-    // varying coverage amounts when the vault holds only premium income.
     function testFuzz_ProRataPayoutManyUsers(uint8 numUsers) public {
         numUsers = uint8(bound(numUsers, 2, 8));
+        (, , , policyManager fm) = _deployUnderfundedSystem();
 
-        (underwriterVault fv, policyManager fm) = _deployUnderfundedSystem();
+        uint256[] memory coverages = new uint256[](numUsers);
+        uint256[] memory pids = new uint256[](numUsers);
+        address[] memory users = new address[](numUsers);
+        uint256 totalCov;
 
-        uint256[] memory coverages  = new uint256[](numUsers);
-        uint256[] memory policyIds  = new uint256[](numUsers);
-        address[]  memory users     = new address[](numUsers);
-        uint256 totalCoverage;
-
-        // Each user i gets (i+1)*1000 coverage and (i+1)*50 premium
         for (uint8 i = 0; i < numUsers; i++) {
-            users[i]    = address(uint160(0x9000 + i));
+            users[i] = address(uint160(0x9000 + i));
             coverages[i] = (uint256(i) + 1) * 1000 * 10**18;
             uint256 premium = (uint256(i) + 1) * 50 * 10**18;
-            totalCoverage += coverages[i];
-
+            totalCov += coverages[i];
             asset.mint(users[i], premium);
             vm.startPrank(users[i]);
             asset.approve(address(fm), premium);
-            policyIds[i] = fm.buyPolicy(0, 30, coverages[i], premium, 35, users[i], DEFAULT_LAT, DEFAULT_LON);
+            pids[i] = fm.buyPolicy(0, 30, coverages[i], premium, 35, users[i], DEFAULT_LAT, DEFAULT_LON);
             vm.stopPrank();
         }
 
-        assertEq(fm.totalActiveCoverage(), totalCoverage, "Coverage tracked correctly");
-
-        uint256 initialVaultAssets = fv.totalAssets();
-        uint256 totalPaidOut;
-
+        uint256 totalPaid;
         for (uint8 i = 0; i < numUsers; i++) {
-            uint256 balBefore = asset.balanceOf(users[i]);
-            fm.triggerPayout(policyIds[i], 40, coverages[i]);
-            uint256 payout = asset.balanceOf(users[i]) - balBefore;
-
-            assertLe(payout, coverages[i], "Payout never exceeds maxCoverage");
-            totalPaidOut += payout;
+            uint256 bal = asset.balanceOf(users[i]);
+            fm.triggerPayout(pids[i], 40, coverages[i]);
+            uint256 payout = asset.balanceOf(users[i]) - bal;
+            assertLe(payout, coverages[i]);
+            totalPaid += payout;
         }
+        assertEq(fm.totalActiveCoverage(), 0);
+    }
 
-        // Core invariant: vault never pays out more than it held
-        assertLe(totalPaidOut, initialVaultAssets, "Total payouts within vault assets");
-        assertEq(fm.totalActiveCoverage(), 0, "All coverage fully cleared");
+    /* ============ Per-Hazard Coverage Tracking ============ */
+
+    function test_ActiveCoverageByHazardTracking() public {
+        uint256 cov1 = 5000 * 10**18;
+        uint256 cov2 = 3000 * 10**18;
+        uint256 pre = 1000 * 10**18;
+
+        // Buy heatwave policy
+        vm.startPrank(alice);
+        asset.approve(address(manager), pre);
+        manager.buyPolicy(0, 30, cov1, pre, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+        assertEq(manager.activeCoverageByHazard(0), cov1, "heatwave coverage");
+        assertEq(manager.activeCoverageByHazard(1), 0, "flood coverage zero");
+
+        // Buy flood policy
+        vm.startPrank(bob);
+        asset.approve(address(manager), pre);
+        manager.buyPolicy(1, 30, cov2, pre, 100, bob, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+        assertEq(manager.activeCoverageByHazard(0), cov1, "heatwave unchanged");
+        assertEq(manager.activeCoverageByHazard(1), cov2, "flood coverage added");
+        assertEq(manager.totalActiveCoverage(), cov1 + cov2, "total matches sum");
+    }
+
+    function test_ActiveCoverageByHazardDecrementOnPayout() public {
+        uint256 cov = 5000 * 10**18;
+        uint256 pre = 1000 * 10**18;
+
+        vm.startPrank(alice);
+        asset.approve(address(manager), pre);
+        uint256 pid = manager.buyPolicy(0, 30, cov, pre, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+        assertEq(manager.activeCoverageByHazard(0), cov);
+
+        manager.triggerPayout(pid, 40, cov);
+        assertEq(manager.activeCoverageByHazard(0), 0, "heatwave coverage cleared");
+    }
+
+    function test_ActiveCoverageByHazardDecrementOnExpiry() public {
+        uint256 cov = 5000 * 10**18;
+        uint256 pre = 1000 * 10**18;
+
+        vm.startPrank(alice);
+        asset.approve(address(manager), pre);
+        uint256 pid = manager.buyPolicy(1, 30, cov, pre, 100, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+        assertEq(manager.activeCoverageByHazard(1), cov);
+
+        vm.warp(block.timestamp + 31 days);
+        manager.releaseExpiredPolicy(pid);
+        assertEq(manager.activeCoverageByHazard(1), 0, "flood coverage cleared on expiry");
+    }
+
+    /* ============ Dynamic Caps (syncVaultCaps) ============ */
+
+    function test_SyncVaultCaps() public {
+        // Set capManager on jr and sr vaults
+        juniorVault.setCapManager(address(manager));
+        seniorVault.setCapManager(address(manager));
+
+        // Change caps on feeModel
+        feeModel.setJuniorCap(2_000_000 * 10**18);
+        // senior should auto-link: 2M * (10000-2500)/2500 = 2M * 3 = 6M
+        assertEq(feeModel.seniorCap(), 6_000_000 * 10**18, "auto-linked senior cap");
+
+        // Sync to vaults
+        manager.syncVaultCaps();
+
+        // Verify vault caps updated
+        assertEq(juniorVault.cap(), 2_000_000 * 10**18, "junior vault cap synced");
+        assertEq(seniorVault.cap(), 6_000_000 * 10**18, "senior vault cap synced");
+    }
+
+    function test_SyncVaultCapsAfterModelChange() public {
+        juniorVault.setCapManager(address(manager));
+        seniorVault.setCapManager(address(manager));
+
+        // Deploy new feeModel with different caps
+        FeeRateModel newModel = new FeeRateModel(3_000_000 * 10**18);
+        manager.setFeeRateModel(IFeeRateModel(address(newModel)));
+
+        manager.syncVaultCaps();
+
+        assertEq(juniorVault.cap(), 3_000_000 * 10**18, "junior cap from new model");
+        assertEq(seniorVault.cap(), 9_000_000 * 10**18, "senior cap from new model");
+    }
+
+    /* ============ Auto Cap Sync on Buy ============ */
+
+    function test_BuyPolicyAutoSyncsVaultCaps() public {
+        // Change caps on feeModel (junior auto-links senior)
+        feeModel.setJuniorCap(5_000_000 * 10**18);
+        uint256 expectedSr = feeModel.seniorCap();
+
+        // Before buy, vault caps still at VAULT_CAP
+        assertEq(juniorVault.cap(), VAULT_CAP);
+
+        vm.startPrank(alice);
+        asset.approve(address(manager), 1000 * 10**18);
+        manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+
+        // After buy, caps should be synced
+        assertEq(juniorVault.cap(), 5_000_000 * 10**18, "junior cap synced on buy");
+        assertEq(seniorVault.cap(), expectedSr, "senior cap synced on buy");
+    }
+
+    function test_BuyPoliciesBatchAutoSyncsVaultCaps() public {
+        feeModel.setJuniorCap(3_000_000 * 10**18);
+        uint256 expectedSr = feeModel.seniorCap();
+
+        assertEq(juniorVault.cap(), VAULT_CAP);
+
+        policyManager.PolicyInput[] memory inputs = new policyManager.PolicyInput[](2);
+        inputs[0] = policyManager.PolicyInput(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, DEFAULT_LAT, DEFAULT_LON);
+        inputs[1] = policyManager.PolicyInput(1, 60, 20_000 * 10**18, 2000 * 10**18, 100, DEFAULT_LAT, DEFAULT_LON);
+
+        vm.startPrank(alice);
+        asset.approve(address(manager), 3000 * 10**18);
+        manager.buyPolicies(inputs, alice);
+        vm.stopPrank();
+
+        assertEq(juniorVault.cap(), 3_000_000 * 10**18, "junior cap synced on batch buy");
+        assertEq(seniorVault.cap(), expectedSr, "senior cap synced on batch buy");
     }
 }

@@ -322,4 +322,125 @@ contract UnderwriterVaultTest is Test {
             assertGt(maxWithdraw, 0, "Should be able to withdraw unreserved");
         }
     }
+
+    /* ============ Cap Manager Tests ============ */
+
+    function test_SetCapFromManager() public {
+        address cm = address(0x99);
+        vault.setCapManager(cm);
+
+        vm.prank(cm);
+        vault.setCapFromManager(2_000_000 * 10**18);
+        assertEq(vault.cap(), 2_000_000 * 10**18, "cap updated by manager");
+    }
+
+    function test_SetCapFromManagerUnauthorized() public {
+        address cm = address(0x99);
+        vault.setCapManager(cm);
+
+        vm.prank(alice);
+        vm.expectRevert(bytes("not authorized"));
+        vault.setCapFromManager(999);
+    }
+
+    /* ============ Lockup Tests ============ */
+
+    function test_LockupDisabledByDefault() public view {
+        assertFalse(vault.lockupEnabled());
+        assertEq(vault.lockupDuration(), 0);
+    }
+
+    function test_SetLockupEnabled() public {
+        vault.setLockupEnabled(true);
+        assertTrue(vault.lockupEnabled());
+        vault.setLockupEnabled(false);
+        assertFalse(vault.lockupEnabled());
+    }
+
+    function test_SetLockupDuration() public {
+        vault.setLockupDuration(30 days);
+        assertEq(vault.lockupDuration(), 30 days);
+    }
+
+    function test_SetLockupDurationMaxCap() public {
+        vm.expectRevert(bytes("max 365 days"));
+        vault.setLockupDuration(366 days);
+    }
+
+    function test_DepositSetsTimestamp() public {
+        asset.mint(alice, INITIAL_DEPOSIT);
+        vm.startPrank(alice);
+        asset.approve(address(vault), INITIAL_DEPOSIT);
+        vault.deposit(INITIAL_DEPOSIT, alice);
+        vm.stopPrank();
+        assertEq(vault.depositTimestamp(alice), block.timestamp);
+    }
+
+    function test_WithdrawBlockedDuringLockup() public {
+        vault.setLockupEnabled(true);
+        vault.setLockupDuration(30 days);
+
+        asset.mint(alice, INITIAL_DEPOSIT);
+        vm.startPrank(alice);
+        asset.approve(address(vault), INITIAL_DEPOSIT);
+        vault.deposit(INITIAL_DEPOSIT, alice);
+        vm.stopPrank();
+
+        assertEq(vault.maxWithdraw(alice), 0, "maxWithdraw should be 0 during lockup");
+        assertEq(vault.maxRedeem(alice), 0, "maxRedeem should be 0 during lockup");
+    }
+
+    function test_WithdrawAllowedAfterLockup() public {
+        vault.setLockupEnabled(true);
+        vault.setLockupDuration(30 days);
+
+        asset.mint(alice, INITIAL_DEPOSIT);
+        vm.startPrank(alice);
+        asset.approve(address(vault), INITIAL_DEPOSIT);
+        vault.deposit(INITIAL_DEPOSIT, alice);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 30 days + 1);
+
+        assertGt(vault.maxWithdraw(alice), 0, "should withdraw after lockup");
+        assertGt(vault.maxRedeem(alice), 0, "should redeem after lockup");
+    }
+
+    function test_LockupDisabledDoesNotBlock() public {
+        // Duration set but not enabled — no restriction
+        vault.setLockupDuration(30 days);
+
+        asset.mint(alice, INITIAL_DEPOSIT);
+        vm.startPrank(alice);
+        asset.approve(address(vault), INITIAL_DEPOSIT);
+        vault.deposit(INITIAL_DEPOSIT, alice);
+        vm.stopPrank();
+
+        assertGt(vault.maxWithdraw(alice), 0, "should withdraw when lockup disabled");
+    }
+
+    function test_SecondDepositResetsLockup() public {
+        vault.setLockupEnabled(true);
+        vault.setLockupDuration(30 days);
+
+        asset.mint(alice, INITIAL_DEPOSIT);
+        vm.startPrank(alice);
+        asset.approve(address(vault), INITIAL_DEPOSIT / 2);
+        vault.deposit(INITIAL_DEPOSIT / 2, alice);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 20 days);
+
+        // Second deposit resets the timer
+        vm.startPrank(alice);
+        asset.approve(address(vault), INITIAL_DEPOSIT / 2);
+        vault.deposit(INITIAL_DEPOSIT / 2, alice);
+        vm.stopPrank();
+
+        // Still locked (20 days into new 30-day lockup)
+        assertEq(vault.maxWithdraw(alice), 0, "should still be locked after re-deposit");
+
+        vm.warp(block.timestamp + 30 days + 1);
+        assertGt(vault.maxWithdraw(alice), 0, "should withdraw after new lockup expires");
+    }
 }

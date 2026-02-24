@@ -8,13 +8,13 @@ Parametrix provides parametric insurance for data centers and the lenders financ
 
 ## How It Works
 
-1. **Policy purchase** — A user calls `buyPolicy()` on the PolicyManager contract, specifying hazard type, location (lat/lon), trigger threshold, and coverage amount. The premium is transferred to the UnderwriterVault. The policy is minted as an ERC-1155 NFT.
+1. **Policy purchase** — A user calls `buyPolicy()` on the PolicyManager contract, specifying hazard type, location (lat/lon), trigger threshold, and coverage amount. The premium is split across three tranched vaults (Underwriter, Junior, Senior) according to the FeeRateModel. The policy is minted as an ERC-1155 NFT.
 
 2. **Automated monitoring** — A Chainlink CRE workflow runs on a cron schedule (every 2 minutes in staging). It reads all active policies from the smart contract, including each policy's geographic coordinates, hazard type, and trigger threshold.
 
 3. **Weather data retrieval** — The CRE workflow groups active policies by (location, hazard) and fetches weather data from Open-Meteo for each unique group. Each DON node fetches independently, aggregates daily observations to monthly values, and evaluates the trigger condition. Results are verified via DON median consensus. Every policy in a group is evaluated against its own trigger threshold.
 
-4. **Payout execution** — If the trigger condition is met (e.g., temperature exceeds 35°C for a heatwave policy), the CRE workflow submits a `triggerPayout` transaction on-chain. The UnderwriterVault releases funds to the policyholder using a pro-rata model when multiple policies are active.
+4. **Payout execution** — If the trigger condition is met (e.g., temperature exceeds 35°C for a heatwave policy), the CRE workflow submits a `triggerPayout` transaction on-chain. Funds are released via a **waterfall**: Underwriter Vault pays first, then Junior, then Senior (most protected). Pro-rata payouts apply when underfunded. Vaults automatically withdraw from Aave if local USDC is insufficient.
 
 ---
 
@@ -22,10 +22,10 @@ Parametrix provides parametric insurance for data centers and the lenders financ
 
 | Directory | Description |
 |---|---|
-| [`smart-contracts/`](smart-contracts/) | Solidity contracts (Foundry) — policy management and underwriter vault |
+| [`smart-contracts/`](smart-contracts/) | Solidity contracts (Foundry) — three-vault tranche system, policy management, Aave yield, dynamic caps |
 | [`cre_chainlink/`](cre_chainlink/) | Chainlink CRE workflow — automated policy monitoring and payout triggering |
 | [`backend-python/`](backend-python/) | Python FastAPI backend — weather data fetching, trigger evaluation, premium calculation |
-| [`frontend/`](frontend/) | React web app (Vite) — user interface for buying policies |
+| [`frontend/`](frontend/) | React web app (Vite) — user interface for buying policies and depositing into vaults |
 
 ---
 
@@ -57,10 +57,41 @@ Parametrix uses a **Chainlink CRE (Chainlink Runtime Environment) workflow** as 
 
 ## Smart Contracts
 
+### Three-Vault Tranche System
+
+```
+Policyholder Premium
+        |
+        v
++------------------+
+|  PolicyManager   |  ERC-1155 policy NFTs, premium split, payout waterfall
++--------+---------+
+         |  split via FeeRateModel
+         v
++----------+  +----------+  +----------+
+|Underwriter|  |  Junior  |  |  Senior  |    ERC-4626 vaults (each with Aave yield)
+|  Vault    |  |  Vault   |  |  Vault   |
++----------+  +----------+  +----------+
+    1st hit       2nd hit       3rd hit (most protected)
+```
+
 | Contract | Description |
 |---|---|
-| [`smart-contracts/src/policyManager.sol`](smart-contracts/src/policyManager.sol) | Issues policies as ERC-1155 NFTs. Stores hazard type, lat/lon, trigger threshold, and coverage per policy. Collects premiums into the vault. Executes payouts via `triggerPayout()` (oracle-restricted). |
-| [`smart-contracts/src/underwriterVault.sol`](smart-contracts/src/underwriterVault.sol) | ERC-4626 vault where underwriters deposit USDC as collateral. Handles share-based reserve tracking and pro-rata payouts when vault is underfunded. |
+| [`policyManager.sol`](smart-contracts/src/policyManager.sol) | Issues policies as ERC-1155 NFTs. Splits premiums across 3 vaults via FeeRateModel. Executes payouts via waterfall (UW -> JR -> SR). Tracks per-hazard active coverage. Syncs vault caps from FeeRateModel. |
+| [`underwriterVault.sol`](smart-contracts/src/underwriterVault.sol) | ERC-4626 vault with share reservation, Aave V3 yield integration (up to 90%), deposit fees, pausable, and configurable cap. Used for all 3 tranches. |
+| [`FeeRateModel.sol`](smart-contracts/src/FeeRateModel.sol) | Computes premium split based on capital ratios and u'_target. Auto-links Junior/Senior caps to maintain ratio. Replaceable by owner without redeploying. |
+| [`IUnderwriterVault.sol`](smart-contracts/src/IUnderwriterVault.sol) | Vault interface for cross-contract calls |
+| [`IFeeRateModel.sol`](smart-contracts/src/IFeeRateModel.sol) | Fee model interface (pluggable) |
+| [`IAavePool.sol`](smart-contracts/src/interfaces/IAavePool.sol) | Minimal Aave V3 Pool interface |
+| [`IAToken.sol`](smart-contracts/src/interfaces/IAToken.sol) | Minimal Aave aToken interface |
+
+### Key Features
+
+- **Payout waterfall**: Underwriter (first loss) -> Junior (mezzanine) -> Senior (most protected)
+- **Aave yield**: Each vault deploys idle USDC to Aave V3, auto-withdraws on payout
+- **Per-hazard coverage**: `activeCoverageByHazard(hazardId)` tracks exposure per hazard type
+- **Dynamic caps**: Junior/Senior caps auto-link to maintain u'_target ratio
+- **Replaceable fee model**: Owner can swap FeeRateModel without redeploying
 
 ---
 
@@ -79,10 +110,18 @@ Parametrix uses a **Chainlink CRE (Chainlink Runtime Environment) workflow** as 
 cd smart-contracts
 cp .env.example .env  # configure PRIVATE_KEY, TENDERLY_RPC_URL
 
-forge script script/Deploy.s.sol:DeployScript \
+# Step 1: Deploy contracts (requires --slow on Tenderly)
+forge script script/Deploy.s.sol:DeployContracts \
   --rpc-url $TENDERLY_RPC_URL \
   --broadcast --slow -vvvv
+
+# Step 2: Configure contracts (no --slow needed)
+forge script script/Deploy.s.sol:ConfigureContracts \
+  --rpc-url $TENDERLY_RPC_URL \
+  --broadcast -vvvv
 ```
+
+Step 1 deploys 3 vaults, FeeRateModel, and PolicyManager using the existing on-chain USDC (saves addresses to `deployments/latest.json`). Step 2 reads those addresses and wires everything: setPolicyManager, capManager, fees, and Aave. The same scripts work for both Tenderly mainnet fork and Ethereum mainnet.
 
 ### 2. Buy a test policy
 
@@ -133,6 +172,8 @@ The workflow reads the policy from the blockchain, groups it by location and haz
 | 1 | Flood | River discharge | m³/s |
 | 2 | Drought | Water deficit | mm |
 
+Custom hazard types can be added/removed by the contract owner via `addHazardType()` / `removeHazardType()`.
+
 ---
 
 ## Challenges: Building on CRE
@@ -163,8 +204,8 @@ See [`cre_chainlink/parametrix/payout_trigger/README.md`](cre_chainlink/parametr
 
 ## Tech Stack
 
-- **Smart Contracts**: Solidity, Foundry, OpenZeppelin (ERC-1155, ERC-4626, ERC-20)
+- **Smart Contracts**: Solidity, Foundry, OpenZeppelin (ERC-1155, ERC-4626, ERC-20, ReentrancyGuard), Aave V3
 - **Automation**: Chainlink CRE SDK (TypeScript), DON consensus aggregation
 - **Backend**: Python, FastAPI, Open-Meteo weather API
-- **Frontend**: React, Vite
-- **Testing**: Tenderly virtual testnet (Ethereum mainnet fork)
+- **Frontend**: React, Vite, Viem, WalletConnect
+- **Testing**: Tenderly virtual testnet (Ethereum mainnet fork), Foundry (106 tests)

@@ -1,8 +1,12 @@
 {
   "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-  "vault": "0x8c20B0469FdBcE27bDf894425115e07096C0ea9F",
-  "policyManager": "0xE3E1b5A56d11376D27c0efF3256E7299dF197d5E",
+  "underwriterVault": "0x8c20B0469FdBcE27bDf894425115e07096C0ea9F",
+  "juniorVault": "0xE3E1b5A56d11376D27c0efF3256E7299dF197d5E",
+  "seniorVault": "0x016e6e63965988Fa71A6D4650D74Da245228001A",
+  "feeRateModel": "0x81eD5c67CB96544aEe71fd4BDB2035d9AA4cf528",
+  "policyManager": "0xEfC0E3ff32A6e71D7661062E9F444D919F4b17e4",
   "feeRecipient": "0xe8d4b94F256f9522b30f8795C42e17Fa135C1cbF",
-  "vaultCap": "10000000000000",
-  "depositFeeBps": "50"
+  "underwriterVaultCap": "10000000000000",
+  "juniorVaultCap": "10000000000000",
+  "seniorVaultCap": "30000000000000"
 }

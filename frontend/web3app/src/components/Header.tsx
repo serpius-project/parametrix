@@ -37,6 +37,13 @@ export default function Header() {
             Dashboard
           </NavLink>
           <NavLink
+            to="/vaults"
+            className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
+            onClick={() => setMenuOpen(false)}
+          >
+            Vaults
+          </NavLink>
+          <NavLink
             to="/health"
             className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
             onClick={() => setMenuOpen(false)}

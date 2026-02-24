@@ -3,9 +3,9 @@
   "lookbackMonths": 3,
   "evms": [
     {
-      "policyManagerAddress": "0xE3E1b5A56d11376D27c0efF3256E7299dF197d5E",
+      "policyManagerAddress": "0xEfC0E3ff32A6e71D7661062E9F444D919F4b17e4",
       "chainSelectorName": "ethereum-testnet-sepolia",
-      "rpcUrl": "https://virtual.rpc.tenderly.co/mmendozaj/wedefin/private/gst-2/1731d148-a30f-4b64-b63a-6136c9fbb016",
+      "rpcUrl": "https://virtual.rpc.tenderly.co/mmendozaj/wedefin/private/gst-4/afa69085-0d9f-4a53-93a4-ffc9ad82d600",
       "gasLimit": "1000000"
     }
   ]

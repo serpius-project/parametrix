@@ -7,14 +7,34 @@ Deployment instructions for **Ethereum Mainnet** (production) and **Tenderly tes
 1. **Install Foundry**: `curl -L https://foundry.paradigm.xyz | bash && foundryup`
 2. **Configure environment**: Copy `.env.example` to `.env` and update values
 3. **Fund deployer wallet**:
-   - Mainnet: ~0.05 ETH for gas
+   - Mainnet: ~0.1 ETH for gas (6 contract deploys + wiring)
    - Tenderly: Use virtual testnet (no real ETH needed)
+
+## What Gets Deployed
+
+The deploy script creates and wires the following contracts:
+
+| Contract | Purpose |
+|---|---|
+| UnderwriterVault (`pUWV`) | First-loss ERC-4626 vault |
+| JuniorVault (`pJNR`) | Mezzanine ERC-4626 vault |
+| SeniorVault (`pSNR`) | Most-protected ERC-4626 vault |
+| FeeRateModel | Premium split calculator (pluggable) |
+| PolicyManager | ERC-1155 policy issuance, payout waterfall |
+
+Post-deploy wiring:
+- All 3 vaults → `setPolicyManager(policyManager)`
+- Junior & Senior vaults → `setCapManager(policyManager)` (for `syncVaultCaps()`)
+- All 3 vaults → `setFee(depositFeeBps, feeRecipient)`
+- (Optional) All 3 vaults → Aave pool, aToken, target BPS, enabled
 
 ## Network Configuration
 
 ### Ethereum Mainnet (Production)
 - **Chain ID**: 1
 - **USDC Address**: `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`
+- **Aave V3 Pool**: `0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2`
+- **aUSDC**: `0x98C23E9d8f34FEFb1B7BD6a91B7FF122F4e16F5c`
 - **RPC**: Alchemy/Infura recommended
 - **Block Explorer**: https://etherscan.io
 
@@ -22,11 +42,10 @@ Deployment instructions for **Ethereum Mainnet** (production) and **Tenderly tes
 - **Type**: Mainnet fork - all mainnet contracts exist
 - **Chain ID**: Custom (configured in Tenderly dashboard)
 - **USDC Address**: `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` (same as mainnet!)
+- **Aave**: Same addresses as mainnet (available on fork)
 - **RPC**: Your Tenderly virtual testnet RPC URL
 - **Block Explorer**: Tenderly dashboard
-- **Visibility**: ⚠️ **Public** - Anyone can view and interact with contracts
-- **Security**: Use only for testing, virtual funds only
-- **Advantage**: Test with real USDC contract for maximum realism
+- **Visibility**: **Public** - Anyone can view and interact with contracts
 
 ## Quick Start
 
@@ -45,37 +64,46 @@ TENDERLY_RPC_URL=https://rpc.vnet.tenderly.co/devnet/YOUR_DEVNET_ID
 # Verification
 ETHERSCAN_API_KEY=your_etherscan_api_key
 
-# Configuration (Both Mainnet and Tenderly Fork)
-# Since Tenderly is a mainnet fork, use same USDC address!
-DEPLOY_MOCK_TOKEN=false
-ASSET_TOKEN=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48  # USDC on Mainnet & Fork
+# Token (uses existing USDC on-chain — same address on mainnet and Tenderly fork)
+ASSET_TOKEN=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 
-# Vault Settings
-VAULT_CAP=10000000000000              # 10M USDC (6 decimals)
-DEPOSIT_FEE_BPS=50                    # 0.5% fee
+# Vault caps (6 decimals for USDC)
+UW_VAULT_CAP=2000000000000          # 2M USDC
+JUNIOR_VAULT_CAP=5000000000000      # 5M USDC
+SENIOR_VAULT_CAP=15000000000000     # 15M USDC
+
+# Fees
+DEPOSIT_FEE_BPS=50                  # 0.5%
 FEE_RECIPIENT=your_fee_recipient_address
-VAULT_NAME="Parametrix Underwriter Vault"
-VAULT_SYMBOL="pUWV"
+
+# Policy metadata
 POLICY_URI="https://api.parametrix.io/policy/{id}"
+
+# Aave integration (optional - omit AAVE_POOL to skip)
+AAVE_POOL=0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2
+AAVE_AUSDC=0x98C23E9d8f34FEFb1B7BD6a91B7FF122F4e16F5c
+UW_AAVE_TARGET_BPS=7000             # 70% to Aave
+JR_AAVE_TARGET_BPS=7000
+SR_AAVE_TARGET_BPS=7000
 ```
 
 ### 2. Deploy to Tenderly (Testing on Mainnet Fork)
 
-**✨ Mainnet Fork Benefits:**
-- Uses **real USDC contract** at mainnet address
-- Identical deployment as mainnet (perfect for testing!)
-- Fork is **publicly visible** - great for community testing
-- Use Tenderly dashboard to mint test USDC to any address
+Deployment is split into two steps: contract creation (requires `--slow`) and configuration (fast, no ordering dependency).
 
 ```bash
-# Deploy with real USDC (already exists on fork!)
-forge script script/Deploy.s.sol:DeployScript \
+# Step 1: Deploy contracts (requires --slow on Tenderly)
+forge script script/Deploy.s.sol:DeployContracts \
   --rpc-url $TENDERLY_RPC_URL \
-  --broadcast \
-  -vvvv
+  --broadcast --slow -vvvv
 
-# Deployment is identical to mainnet, just different RPC URL
+# Step 2: Configure contracts (no --slow needed)
+forge script script/Deploy.s.sol:ConfigureContracts \
+  --rpc-url $TENDERLY_RPC_URL \
+  --broadcast -vvvv
 ```
+
+> **Why two steps?** Tenderly processes transactions out of order without `--slow`, but `--slow` is only needed for contract deploys (each depends on the previous address). Configuration calls are independent and can batch fast.
 
 **After deployment, fund test wallets:**
 1. Go to Tenderly dashboard
@@ -84,13 +112,15 @@ forge script script/Deploy.s.sol:DeployScript \
 
 ### 3. Deploy to Mainnet (Production)
 
-**⚠️ Production Deployment Checklist:**
+**Production Deployment Checklist:**
 - [ ] Smart contracts audited
-- [ ] All tests passing: `forge test`
+- [ ] All 106 tests passing: `forge test`
 - [ ] Environment variables verified
 - [ ] USDC address correct: `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`
+- [ ] Aave addresses correct (if using Aave)
 - [ ] Fee recipient address confirmed
-- [ ] Deployer wallet funded (0.05+ ETH)
+- [ ] Vault caps appropriate for launch
+- [ ] Deployer wallet funded (0.1+ ETH)
 - [ ] Tested on Tenderly first
 
 ```bash
@@ -99,43 +129,35 @@ echo "Asset Token: $ASSET_TOKEN"
 echo "Fee Recipient: $FEE_RECIPIENT"
 echo "Deployer: $(cast wallet address --private-key $PRIVATE_KEY)"
 
-# Deploy to mainnet
-forge script script/Deploy.s.sol:DeployProduction \
+# Step 1: Deploy contracts (add --verify for Etherscan verification)
+forge script script/Deploy.s.sol:DeployContracts \
   --rpc-url $MAINNET_RPC_URL \
-  --broadcast \
-  --verify \
-  --slow \
-  -vvvv
+  --broadcast --verify --slow -vvvv
+
+# Step 2: Configure contracts
+forge script script/Deploy.s.sol:ConfigureContracts \
+  --rpc-url $MAINNET_RPC_URL \
+  --broadcast -vvvv
 ```
 
-## Deployment Outputs
+## Deployment Output
 
-After successful deployment:
+After successful deployment, addresses are saved to `deployments/latest.json`:
 
-```
-===============================================
-Parametrix Protocol Deployed Successfully
-===============================================
-Network: Ethereum Mainnet (Chain ID: 1)
-
-Deployed Contracts:
-  Asset Token:        0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 (USDC)
-  UnderwriterVault:   0x... (SAVE THIS!)
-  PolicyManager:      0x... (SAVE THIS!)
-
-Configuration:
-  Vault Cap:          10,000,000 USDC
-  Deposit Fee:        0.5%
-  Fee Recipient:      0x...
-
-Next Steps:
-  1. Verify contracts on Etherscan (if --verify failed)
-  2. Set oracle address in PolicyManager
-  3. Transfer ownership to multisig
-  4. Configure CRE workflow with PolicyManager address
-
-Deployment saved to: deployments/latest.json
-===============================================
+```json
+{
+  "asset": "0x...",
+  "underwriterVault": "0x...",
+  "juniorVault": "0x...",
+  "seniorVault": "0x...",
+  "feeRateModel": "0x...",
+  "policyManager": "0x...",
+  "feeRecipient": "0x...",
+  "underwriterVaultCap": "...",
+  "juniorVaultCap": "...",
+  "seniorVaultCap": "...",
+  "depositFeeBps": "..."
+}
 ```
 
 ## Post-Deployment Steps
@@ -145,10 +167,8 @@ Deployment saved to: deployments/latest.json
 After deploying CRE workflow, set the DON as oracle:
 
 ```bash
-# Get PolicyManager address from deployment output
 export POLICY_MANAGER=0x...
 
-# Set CRE DON as oracle
 cast send $POLICY_MANAGER \
   "setOracle(address)" \
   <DON_ADDRESS> \
@@ -156,17 +176,30 @@ cast send $POLICY_MANAGER \
   --private-key $PRIVATE_KEY
 ```
 
-### 2. Transfer Ownership (Recommended)
+### 2. Sync Vault Caps (if using dynamic caps)
+
+After adjusting FeeRateModel caps, push them to the vaults:
+
+```bash
+cast send $POLICY_MANAGER \
+  "syncVaultCaps()" \
+  --rpc-url $MAINNET_RPC_URL \
+  --private-key $PRIVATE_KEY
+```
+
+### 3. Transfer Ownership (Recommended)
 
 Transfer contract ownership to a multisig:
 
 ```bash
-# Transfer UnderwriterVault ownership
-cast send $VAULT_ADDRESS \
-  "transferOwnership(address)" \
-  <MULTISIG_ADDRESS> \
-  --rpc-url $MAINNET_RPC_URL \
-  --private-key $PRIVATE_KEY
+# Transfer all vault ownerships
+for VAULT in $UW_VAULT $JR_VAULT $SR_VAULT; do
+  cast send $VAULT \
+    "transferOwnership(address)" \
+    <MULTISIG_ADDRESS> \
+    --rpc-url $MAINNET_RPC_URL \
+    --private-key $PRIVATE_KEY
+done
 
 # Transfer PolicyManager ownership
 cast send $POLICY_MANAGER \
@@ -174,52 +207,78 @@ cast send $POLICY_MANAGER \
   <MULTISIG_ADDRESS> \
   --rpc-url $MAINNET_RPC_URL \
   --private-key $PRIVATE_KEY
+
+# Transfer FeeRateModel ownership
+cast send $FEE_RATE_MODEL \
+  "transferOwnership(address)" \
+  <MULTISIG_ADDRESS> \
+  --rpc-url $MAINNET_RPC_URL \
+  --private-key $PRIVATE_KEY
 ```
 
-### 3. Initial Underwriter Deposit
+### 4. Initial Deposits
 
-Provide initial liquidity:
+Provide initial liquidity to each vault:
 
 ```bash
-export VAULT_ADDRESS=0x...
 export AMOUNT=1000000000  # 1,000 USDC (6 decimals)
 
-# 1. Approve USDC
-cast send 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
-  "approve(address,uint256)" \
-  $VAULT_ADDRESS \
-  $AMOUNT \
-  --rpc-url $MAINNET_RPC_URL \
-  --private-key $UNDERWRITER_KEY
+# Approve and deposit to each vault
+for VAULT in $UW_VAULT $JR_VAULT $SR_VAULT; do
+  cast send $ASSET_TOKEN \
+    "approve(address,uint256)" $VAULT $AMOUNT \
+    --rpc-url $MAINNET_RPC_URL \
+    --private-key $UNDERWRITER_KEY
 
-# 2. Deposit to vault
-cast send $VAULT_ADDRESS \
-  "deposit(uint256,address)" \
-  $AMOUNT \
-  <UNDERWRITER_ADDRESS> \
-  --rpc-url $MAINNET_RPC_URL \
-  --private-key $UNDERWRITER_KEY
+  cast send $VAULT \
+    "deposit(uint256,address)" $AMOUNT <UNDERWRITER_ADDRESS> \
+    --rpc-url $MAINNET_RPC_URL \
+    --private-key $UNDERWRITER_KEY
+done
+```
+
+### 5. Rebalance to Aave (if Aave enabled)
+
+After initial deposits, trigger rebalancing to deploy funds to Aave:
+
+```bash
+for VAULT in $UW_VAULT $JR_VAULT $SR_VAULT; do
+  cast send $VAULT \
+    "rebalance()" \
+    --rpc-url $MAINNET_RPC_URL \
+    --private-key $PRIVATE_KEY
+done
 ```
 
 ## Verification
 
 If automatic verification fails, verify manually:
 
-### Etherscan Verification
-
 ```bash
-# Verify UnderwriterVault
+# Verify UnderwriterVault (same for Junior/Senior with different args)
 forge verify-contract \
   <VAULT_ADDRESS> \
   src/underwriterVault.sol:underwriterVault \
   --chain-id 1 \
   --etherscan-api-key $ETHERSCAN_API_KEY \
-  --constructor-args $(cast abi-encode "constructor(address,string,string,uint256,address)" \
-    0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
+  --constructor-args $(cast abi-encode \
+    "constructor(address,string,string,uint256,address)" \
+    $ASSET_TOKEN \
     "Parametrix Underwriter Vault" \
     "pUWV" \
-    10000000000000 \
+    $UW_VAULT_CAP \
     $FEE_RECIPIENT)
+
+# Verify FeeRateModel
+forge verify-contract \
+  <FEE_MODEL_ADDRESS> \
+  src/FeeRateModel.sol:FeeRateModel \
+  --chain-id 1 \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
+  --constructor-args $(cast abi-encode \
+    "constructor(uint256,uint256)" \
+    $JUNIOR_VAULT_CAP \
+    $SENIOR_VAULT_CAP)
 
 # Verify PolicyManager
 forge verify-contract \
@@ -227,9 +286,13 @@ forge verify-contract \
   src/policyManager.sol:policyManager \
   --chain-id 1 \
   --etherscan-api-key $ETHERSCAN_API_KEY \
-  --constructor-args $(cast abi-encode "constructor(address,address,string)" \
-    0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
-    <VAULT_ADDRESS> \
+  --constructor-args $(cast abi-encode \
+    "constructor(address,address,address,address,address,string)" \
+    $ASSET_TOKEN \
+    $UW_VAULT \
+    $JR_VAULT \
+    $SR_VAULT \
+    $FEE_RATE_MODEL \
     "https://api.parametrix.io/policy/{id}")
 ```
 
@@ -238,111 +301,68 @@ forge verify-contract \
 ### Mainnet Fork Benefits
 
 Since Tenderly is a **mainnet fork**, you get:
-- ✅ **Real USDC Contract**: Test with actual USDC at `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`
-- ✅ **Identical Deployment**: Same as mainnet, just virtual funds
-- ✅ **All Mainnet Contracts**: DeFi protocols, tokens, etc. all available
-- ✅ **Realistic Testing**: Exact production environment simulation
-
-Since the fork is **publicly visible**:
-- ✅ **Community Testing**: Share with community for early feedback
-- ✅ **Public Demos**: Show functionality to stakeholders/investors
-- ✅ **Integration Testing**: Partners can test integrations before mainnet
-- ✅ **Transparent Development**: Build in public, gain trust
-- ✅ **Bug Bounties**: Let security researchers test publicly
+- **Real USDC Contract**: Test with actual USDC at `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`
+- **Real Aave V3**: Test yield integration with actual Aave pool
+- **Identical Deployment**: Same as mainnet, just virtual funds
+- **Realistic Testing**: Exact production environment simulation
 
 ### Security Considerations
 
-⚠️ **Important**: Public fork means anyone can:
+**Public fork** means anyone can:
 - View all contract code and state
 - Call any public function
 - Purchase policies with USDC (if they have fork balance)
 - Attempt exploits (good for finding bugs!)
-- Monitor all transactions and events
-- Interact with mainnet contracts on the fork
 
 **Best Practices**:
 - Use separate test wallets (never use mainnet keys)
 - Don't test sensitive business logic publicly
 - Monitor for unusual activity
-- Consider it a security audit opportunity
-- Document known limitations publicly
 
-### Simulate Transactions
+### Mint Test USDC on Fork
 
-```bash
-# Use Tenderly dashboard to:
-# 1. Simulate policy purchases
-# 2. Test payout triggers
-# 3. Validate vault mechanics
-# 4. Fork mainnet state for realistic testing
-# 5. Share transaction simulations with team
-```
-
-### Monitor Deployment
-
-View in Tenderly:
-- Transaction history (public)
-- Contract interactions (public)
-- State changes (public)
-- Event emissions (public)
-
-**Share with team/community**:
-- Tenderly dashboard link
-- Contract addresses
-- How to get test USDC (Tenderly state overrides)
-- Testing instructions
-
-**Mint Test USDC on Fork**:
 ```bash
 # Use Tenderly dashboard "State Overrides" feature
-# Or use Tenderly API to modify USDC balances:
-# 1. Go to Contract at 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
-# 2. Find storage slot for balances mapping
-# 3. Override balance for your test address
+# Or use Tenderly API to modify USDC balances
 ```
 
 ## Troubleshooting
 
-### Gas Estimation Failed
-- **Cause**: RPC issue or insufficient balance
-- **Fix**: Try different RPC or add more ETH to deployer
-
-### Verification Failed
-- **Cause**: Etherscan API timeout or wrong constructor args
-- **Fix**: Use manual verification command above
-
-### Transaction Underpriced
-- **Cause**: Network congestion
-- **Fix**: Add `--with-gas-price $(cast gas-price --rpc-url $RPC_URL)` or use `--slow`
-
-### Contract Already Deployed
-- **Cause**: Previous deployment at same nonce
-- **Fix**: Use `--resume` flag or deploy from different address
+| Issue | Solution |
+|-------|----------|
+| Gas estimation failed | Check RPC URL and deployer balance |
+| Verification failed | Use manual verification commands above |
+| Transaction underpriced | Add `--slow` flag or set gas price manually |
+| Contract already deployed | Use `--resume` flag or deploy from different address |
+| Stack-too-deep compilation | Ensure `via_ir = true` in `foundry.toml` |
 
 ## Security Checklist
 
 Before mainnet deployment:
 
 - [ ] **Audit**: Contract code professionally audited
-- [ ] **Tests**: 100% passing with good coverage
+- [ ] **Tests**: 106 tests passing with good coverage
 - [ ] **Keys**: Use hardware wallet or secure key management
-- [ ] **Addresses**: All addresses verified (USDC, fee recipient, etc.)
-- [ ] **Limits**: Vault cap appropriate for launch
+- [ ] **Addresses**: All addresses verified (USDC, Aave, fee recipient)
+- [ ] **Limits**: Vault caps appropriate for launch
+- [ ] **Aave targets**: Sane percentages (max 90% per vault)
 - [ ] **Ownership**: Plan for multisig transfer
 - [ ] **Oracle**: CRE workflow tested and ready
 - [ ] **Monitoring**: Block explorer alerts configured
-- [ ] **Recovery**: Emergency procedures documented
+- [ ] **Recovery**: Emergency procedures documented (pause vaults, disable Aave)
 
 ## Cost Estimates
 
 ### Ethereum Mainnet Gas Costs
+
 | Operation | Estimated Gas | Cost @ 30 gwei |
 |-----------|--------------|----------------|
-| Deploy MockUSDC | ~1,200,000 | ~0.036 ETH |
-| Deploy UnderwriterVault | ~2,500,000 | ~0.075 ETH |
+| Deploy UnderwriterVault (x3) | ~7,500,000 | ~0.225 ETH |
+| Deploy FeeRateModel | ~800,000 | ~0.024 ETH |
 | Deploy PolicyManager | ~3,000,000 | ~0.090 ETH |
-| **Total (with mock)** | **~6,700,000** | **~0.20 ETH** |
-| **Total (no mock)** | **~5,500,000** | **~0.165 ETH** |
+| Wiring (setPolicyManager, capManager, fees, Aave) | ~500,000 | ~0.015 ETH |
+| **Total (with Aave)** | **~11,800,000** | **~0.35 ETH** |
+| **Total (no Aave)** | **~11,300,000** | **~0.34 ETH** |
 
 *Actual costs vary with gas prices*
 
@@ -354,13 +374,6 @@ Before mainnet deployment:
 - **Etherscan**: https://etherscan.io
 - **Tenderly**: https://dashboard.tenderly.co
 - **USDC Info**: https://www.circle.com/en/usdc
+- **Aave V3 Docs**: https://docs.aave.com/developers/
 - **Foundry Docs**: https://book.getfoundry.sh
 - **CRE Setup**: See `cre_chainlink/parametrix/payout_trigger/CRE_SETUP.md`
-
-## Support
-
-For deployment issues:
-1. Check Tenderly first (free testing)
-2. Verify all env variables
-3. Review transaction logs with `-vvvv`
-4. Test with `--slow` flag for timing issues

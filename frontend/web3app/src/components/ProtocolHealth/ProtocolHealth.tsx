@@ -1,6 +1,6 @@
 import { useProtocolHealth } from '../../hooks/useProtocolHealth'
 import { useDepositHistory } from '../../hooks/useDepositHistory'
-import { rawToUsdc, formatUsdc } from '../../utils/format'
+import { rawToUsdc, formatUsdc, formatCompact } from '../../utils/format'
 import Button from '../common/Button'
 import {
   AreaChart,
@@ -11,6 +11,9 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  PieChart,
+  Pie,
+  Cell,
 } from 'recharts'
 
 function getRatioClass(ratio: number): string {
@@ -23,6 +26,46 @@ function getRatioLabel(ratio: number): string {
   if (ratio >= 1.5) return 'Healthy'
   if (ratio >= 1) return 'Adequate'
   return 'Underfunded'
+}
+
+interface VaultDonutProps {
+  label: string
+  color: string
+  assets: number
+  cap: number
+}
+
+function VaultDonut({ label, color, assets, cap }: VaultDonutProps) {
+  const pct = cap > 0 ? Math.min((assets / cap) * 100, 100) : 0
+  const data = [
+    { value: pct },
+    { value: 100 - pct },
+  ]
+  return (
+    <div className="vault-donut">
+      <div className="vault-donut-chart">
+        <ResponsiveContainer width={120} height={120}>
+          <PieChart>
+            <Pie
+              data={data}
+              innerRadius={40}
+              outerRadius={55}
+              startAngle={90}
+              endAngle={-270}
+              dataKey="value"
+              stroke="none"
+            >
+              <Cell fill={color} />
+              <Cell fill="rgba(255,255,255,0.06)" />
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <span className="vault-donut-pct">{pct.toFixed(1)}%</span>
+      </div>
+      <span className="vault-donut-label">{label}</span>
+      <span className="vault-donut-value">${formatCompact(assets)} of ${formatCompact(cap)}</span>
+    </div>
+  )
 }
 
 export default function ProtocolHealth() {
@@ -48,8 +91,13 @@ export default function ProtocolHealth() {
   const capUsdc = rawToUsdc(data.cap)
   const activeCoverageUsdc = rawToUsdc(data.totalActiveCoverage)
   const coverageRatio = activeCoverageUsdc > 0 ? totalAssetsUsdc / activeCoverageUsdc : Infinity
-  const barDepositsWidth = capUsdc > 0 ? Math.min((totalAssetsUsdc / capUsdc) * 100, 100) : 0
-  const barCoverageWidth = capUsdc > 0 ? Math.min((activeCoverageUsdc / capUsdc) * 100, 100) : 0
+
+  const uwAssets = rawToUsdc(data.underwriter.totalAssets)
+  const uwCap = rawToUsdc(data.underwriter.cap)
+  const jrAssets = rawToUsdc(data.junior.totalAssets)
+  const jrCap = rawToUsdc(data.junior.cap)
+  const srAssets = rawToUsdc(data.senior.totalAssets)
+  const srCap = rawToUsdc(data.senior.cap)
 
   return (
     <div className="protocol-health">
@@ -63,9 +111,9 @@ export default function ProtocolHealth() {
       {/* Summary cards */}
       <div className="health-cards">
         <div className="health-card">
-          <span className="health-card-label">Vault Deposits</span>
+          <span className="health-card-label">Total Vault Deposits</span>
           <span className="health-card-value">${formatUsdc(totalAssetsUsdc)}</span>
-          <span className="health-card-sub">USDC</span>
+          <span className="health-card-sub">USDC across all vaults</span>
         </div>
 
         <div className="health-card">
@@ -83,24 +131,20 @@ export default function ProtocolHealth() {
             {coverageRatio === Infinity ? 'No active coverage' : getRatioLabel(coverageRatio)}
           </span>
         </div>
-
       </div>
 
-      {/* Visual bar */}
+      {/* Per-vault breakdown */}
       <div className="health-bar-section">
-        <h3>Vault Capacity</h3>
+        <h3>Vault Breakdown</h3>
+        <div className="vault-donuts">
+          <VaultDonut label="Underwriter" color="#8b5cf6" assets={uwAssets} cap={uwCap} />
+          <VaultDonut label="Junior" color="#f59e0b" assets={jrAssets} cap={jrCap} />
+          <VaultDonut label="Senior" color="#22c55e" assets={srAssets} cap={srCap} />
+        </div>
         <div className="health-bar-labels">
-          <span>Deposits: ${formatUsdc(totalAssetsUsdc)}</span>
-          <span>Coverage needed: ${formatUsdc(activeCoverageUsdc)}</span>
-          <span>Cap: ${formatUsdc(capUsdc)}</span>
-        </div>
-        <div className="health-bar">
-          <div className="health-bar-deposits" style={{ width: `${barDepositsWidth}%` }} />
-          <div className="health-bar-coverage" style={{ width: `${barCoverageWidth}%` }} />
-        </div>
-        <div className="health-bar-legend">
-          <span><span className="legend-dot deposits" /> Deposits</span>
-          <span><span className="legend-dot coverage" /> Active Coverage</span>
+          <span>Total: ${formatCompact(totalAssetsUsdc)}</span>
+          <span>Coverage needed: ${formatCompact(activeCoverageUsdc)}</span>
+          <span>Total Cap: ${formatCompact(capUsdc)}</span>
         </div>
       </div>
 

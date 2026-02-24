@@ -12,6 +12,13 @@ export const rawToUsdc = (raw: bigint): number =>
 export const formatUsdc = (usdc: number): string =>
   usdc.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+/** Format large numbers compactly: 10000000 → "10M", 2500 → "2.5K", 45.5 → "45.50" */
+export const formatCompact = (n: number): string => {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`
+  return n.toFixed(2)
+}
+
 /** Convert decimal degrees to int32 × 10000 for the contract */
 export const coordToInt32 = (coord: number): number =>
   Math.round(coord * 10000)

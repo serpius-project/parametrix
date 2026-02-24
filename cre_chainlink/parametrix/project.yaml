@@ -27,7 +27,7 @@
 staging-settings:
   rpcs:
     - chain-name: ethereum-testnet-sepolia
-      url: https://virtual.rpc.tenderly.co/mmendozaj/wedefin/private/gst-2/1731d148-a30f-4b64-b63a-6136c9fbb016
+      url: https://virtual.rpc.tenderly.co/mmendozaj/wedefin/private/gst-4/afa69085-0d9f-4a53-93a4-ffc9ad82d600
 
 # ==========================================================================
 production-settings:

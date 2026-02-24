@@ -4,28 +4,29 @@ pragma solidity ^0.8.20;
 import {ERC1155} from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-
-interface IUnderwriterVault is IERC4626 {
-    function reserveShares(uint256 shares) external returns (uint256 reserved);
-    function unreserveShares(uint256 shares) external returns (bool);
-    function withdrawForPayout(uint256 assets, address receiver, uint256 reservedShares) external returns (uint256 shares);
-}
+import {IUnderwriterVault} from "./IUnderwriterVault.sol";
+import {IFeeRateModel} from "./IFeeRateModel.sol";
 
 contract policyManager is ERC1155, Ownable {
-    IERC20   public immutable asset;
-    IUnderwriterVault public immutable vault;
+    IERC20 public immutable asset;
 
-    // Dynamic hazard type registry (replaces fixed enum for flexibility)
+    // ── Three-vault tranche system ───────────────────────────────────────────
+    IUnderwriterVault public immutable underwriterVault;
+    IUnderwriterVault public immutable juniorVault;
+    IUnderwriterVault public immutable seniorVault;
+
+    // Replaceable fee model (owner can swap without redeploying)
+    IFeeRateModel public feeRateModel;
+
+    // ── Dynamic hazard type registry ─────────────────────────────────────────
     mapping(uint8 => bool) public validHazards;
     mapping(uint8 => string) public hazardNames;
-    mapping(uint8 => bool) public hazardTriggerAbove; // true = value >= threshold triggers, false = value <= threshold triggers
+    mapping(uint8 => bool) public hazardTriggerAbove;
 
-    // Hazard management events
+    // ── Events ───────────────────────────────────────────────────────────────
     event HazardAdded(uint8 indexed hazardId, string name, bool triggerAbove);
     event HazardRemoved(uint8 indexed hazardId);
 
-    // Events for CRE monitoring
     event PolicyPurchased(
         uint256 indexed policyId,
         address indexed holder,
@@ -36,6 +37,13 @@ contract policyManager is ERC1155, Ownable {
         int256 triggerThreshold,
         int32 lat,
         int32 lon
+    );
+
+    event PremiumDistributed(
+        uint256 indexed policyId,
+        uint256 juniorAmount,
+        uint256 seniorAmount,
+        uint256 underwriterAmount
     );
 
     event PayoutTriggered(
@@ -51,12 +59,13 @@ contract policyManager is ERC1155, Ownable {
         uint256 sharesReleased
     );
 
+    // ── Data structures ──────────────────────────────────────────────────────
     struct Policy {
         uint8 hazard;
         uint40 start;
         uint40 end;
-        int32 lat;          // latitude × 10 000  (e.g. 39.5157° → 395157)
-        int32 lon;          // longitude × 10 000  (e.g. -119.4713° → -1194713)
+        int32 lat;
+        int32 lon;
         uint256 maxCoverage;
         uint256 premium;
         int256 triggerThreshold;
@@ -73,73 +82,189 @@ contract policyManager is ERC1155, Ownable {
         int32 lon;
     }
 
+    struct VaultReservations {
+        uint256 underwriterShares;
+        uint256 juniorShares;
+        uint256 seniorShares;
+    }
+
     uint256 public nextId = 1;
     mapping(uint256 => Policy) public policies;
-    mapping(uint256 => address) public holderOf; // always current holder (since supply=1)
-    mapping(uint256 => uint256) public reservedShares; // shares reserved per policy
-    uint256 public totalActiveCoverage; // sum of maxCoverage across all active policies
+    mapping(uint256 => address) public holderOf;
+    mapping(uint256 => VaultReservations) public vaultReservedShares;
+    uint256 public totalActiveCoverage;
+    mapping(uint8 => uint256) public activeCoverageByHazard;
     address public oracle;
 
-    constructor(IERC20 asset_, IUnderwriterVault vault_, string memory uri_) //vault_ is the underwriter address
+    // ── Constructor ──────────────────────────────────────────────────────────
+    constructor(
+        IERC20 asset_,
+        IUnderwriterVault underwriterVault_,
+        IUnderwriterVault juniorVault_,
+        IUnderwriterVault seniorVault_,
+        IFeeRateModel feeRateModel_,
+        string memory uri_
+    )
         ERC1155(uri_)
         Ownable(msg.sender)
     {
         asset = asset_;
-        vault = vault_;
+        underwriterVault = underwriterVault_;
+        juniorVault = juniorVault_;
+        seniorVault = seniorVault_;
+        feeRateModel = feeRateModel_;
         oracle = msg.sender;
 
         // Initialize default hazard types
-        validHazards[0] = true; // Heatwave
-        validHazards[1] = true; // Flood
-        validHazards[2] = true; // Drought
+        validHazards[0] = true;
+        validHazards[1] = true;
+        validHazards[2] = true;
 
         hazardNames[0] = "Heatwave";
         hazardNames[1] = "Flood";
         hazardNames[2] = "Drought";
 
-        hazardTriggerAbove[0] = true;  // Heatwave: high temp is bad
-        hazardTriggerAbove[1] = true;  // Flood: high discharge is bad
-        hazardTriggerAbove[2] = false; // Drought: low deficit is bad
+        hazardTriggerAbove[0] = true;   // high temp is bad
+        hazardTriggerAbove[1] = true;   // high discharge is bad
+        hazardTriggerAbove[2] = false;  // low deficit is bad
     }
 
+    // ── Admin ────────────────────────────────────────────────────────────────
     function setOracle(address o) external onlyOwner { oracle = o; }
 
-    // ============================================================================
-    // HAZARD MANAGEMENT FUNCTIONS
-    // ============================================================================
+    function setFeeRateModel(IFeeRateModel newModel) external onlyOwner {
+        require(address(newModel) != address(0), "zero address");
+        feeRateModel = newModel;
+    }
 
-    /**
-     * @notice Add a new hazard type to the registry
-     * @param hazardId Unique identifier for the hazard (e.g., 3, 4, 5...)
-     * @param name Human-readable name for the hazard (e.g., "Earthquake", "Hurricane")
-     */
+    event VaultCapsSynced(uint256 juniorCap, uint256 seniorCap);
+
+    /// @dev Internal cap sync logic — recomputes linked caps from current
+    ///      juniorCap and uTargetBps, then pushes to vaults.
+    function _syncVaultCaps() internal {
+        feeRateModel.recomputeCaps();
+        uint256 jrCap = feeRateModel.juniorCap();
+        uint256 srCap = feeRateModel.seniorCap();
+        juniorVault.setCapFromManager(jrCap);
+        seniorVault.setCapFromManager(srCap);
+        emit VaultCapsSynced(jrCap, srCap);
+    }
+
+    /// @notice Push the FeeRateModel's caps to the junior and senior vaults
+    function syncVaultCaps() external {
+        _syncVaultCaps();
+    }
+
+    // ── Hazard management ────────────────────────────────────────────────────
     function addHazardType(uint8 hazardId, string calldata name, bool triggerAbove) external onlyOwner {
         require(!validHazards[hazardId], "hazard already exists");
         require(bytes(name).length > 0, "name required");
-
         validHazards[hazardId] = true;
         hazardNames[hazardId] = name;
         hazardTriggerAbove[hazardId] = triggerAbove;
-
         emit HazardAdded(hazardId, name, triggerAbove);
     }
 
-    /**
-     * @notice Remove/deprecate a hazard type from the registry
-     * @dev Existing policies with this hazard remain valid, but new policies cannot be created
-     * @param hazardId The hazard identifier to remove
-     */
     function removeHazardType(uint8 hazardId) external onlyOwner {
         require(validHazards[hazardId], "hazard doesn't exist");
-
         validHazards[hazardId] = false;
-
         emit HazardRemoved(hazardId);
     }
 
-    // ============================================================================
-    // POLICY PURCHASE FUNCTIONS
-    // ============================================================================
+    // ── Helpers (internal) ───────────────────────────────────────────────────
+
+    /// @dev Get the total assets across all three vaults
+    function _totalVaultAssets() internal view returns (uint256) {
+        return underwriterVault.totalAssets() + juniorVault.totalAssets() + seniorVault.totalAssets();
+    }
+
+    /// @dev Split premium and deposit to all three vaults
+    function _distributePremium(uint256 premium, uint256 policyId) internal {
+        IFeeRateModel.FeeAllocation memory alloc = feeRateModel.getFeeSplit(
+            premium,
+            juniorVault.totalAssets(),
+            seniorVault.totalAssets(),
+            underwriterVault.totalAssets()
+        );
+
+        uint256 juniorAmount = (premium * alloc.juniorBps) / 10000;
+        uint256 seniorAmount = (premium * alloc.seniorBps) / 10000;
+        uint256 underwriterAmount = premium - juniorAmount - seniorAmount; // dust goes to underwriter
+
+        if (juniorAmount > 0) {
+            asset.approve(address(juniorVault), juniorAmount);
+            juniorVault.deposit(juniorAmount, address(this));
+        }
+        if (seniorAmount > 0) {
+            asset.approve(address(seniorVault), seniorAmount);
+            seniorVault.deposit(seniorAmount, address(this));
+        }
+        if (underwriterAmount > 0) {
+            asset.approve(address(underwriterVault), underwriterAmount);
+            underwriterVault.deposit(underwriterAmount, address(this));
+        }
+
+        emit PremiumDistributed(policyId, juniorAmount, seniorAmount, underwriterAmount);
+    }
+
+    /// @dev Reserve shares across vaults in waterfall order:
+    ///      underwriter first → junior → senior (senior is most protected)
+    function _reserveShares(uint256 maxCoverage, uint256 policyId) internal {
+        uint256 remaining = maxCoverage;
+
+        // 1. Underwriter vault absorbs first
+        uint256 uwReserved;
+        if (remaining > 0) {
+            uint256 uwShares = underwriterVault.previewWithdraw(remaining);
+            uwReserved = underwriterVault.reserveShares(uwShares);
+            uint256 uwCovered = underwriterVault.previewRedeem(uwReserved);
+            remaining = remaining > uwCovered ? remaining - uwCovered : 0;
+        }
+
+        // 2. Junior vault absorbs next
+        uint256 jrReserved;
+        if (remaining > 0) {
+            uint256 jrShares = juniorVault.previewWithdraw(remaining);
+            jrReserved = juniorVault.reserveShares(jrShares);
+            uint256 jrCovered = juniorVault.previewRedeem(jrReserved);
+            remaining = remaining > jrCovered ? remaining - jrCovered : 0;
+        }
+
+        // 3. Senior vault absorbs last (most protected)
+        uint256 srReserved;
+        if (remaining > 0) {
+            uint256 srShares = seniorVault.previewWithdraw(remaining);
+            srReserved = seniorVault.reserveShares(srShares);
+        }
+
+        vaultReservedShares[policyId] = VaultReservations({
+            underwriterShares: uwReserved,
+            juniorShares: jrReserved,
+            seniorShares: srReserved
+        });
+    }
+
+    /// @dev Unreserve shares from all vaults for a policy
+    function _unreserveAll(uint256 policyId) internal returns (uint256 totalReleased) {
+        VaultReservations memory res = vaultReservedShares[policyId];
+
+        if (res.underwriterShares > 0) {
+            underwriterVault.unreserveShares(res.underwriterShares);
+            totalReleased += res.underwriterShares;
+        }
+        if (res.juniorShares > 0) {
+            juniorVault.unreserveShares(res.juniorShares);
+            totalReleased += res.juniorShares;
+        }
+        if (res.seniorShares > 0) {
+            seniorVault.unreserveShares(res.seniorShares);
+            totalReleased += res.seniorShares;
+        }
+
+        delete vaultReservedShares[policyId];
+    }
+
+    // ── Policy purchase ──────────────────────────────────────────────────────
 
     function buyPolicy(
         uint8 hazard,
@@ -151,6 +276,7 @@ contract policyManager is ERC1155, Ownable {
         int32 lat,
         int32 lon
     ) external returns (uint256 id) {
+        _syncVaultCaps();
         require(validHazards[hazard], "invalid hazard type");
 
         id = nextId++;
@@ -167,29 +293,23 @@ contract policyManager is ERC1155, Ownable {
             paid: false
         });
 
+        // Transfer premium from buyer
         asset.transferFrom(msg.sender, address(this), premium);
-        asset.approve(address(vault), premium);
-        vault.deposit(premium, address(this));
 
-        // Reserve up to the shares needed for maxCoverage.
-        // If vault is underfunded, partial reservation is accepted - payout will
-        // be pro-rata based on totalActiveCoverage at trigger time.
-        uint256 sharesToReserve = vault.previewWithdraw(maxCoverage);
-        reservedShares[id] = vault.reserveShares(sharesToReserve);
+        // Split and deposit to three vaults
+        _distributePremium(premium, id);
+
+        // Reserve shares in waterfall order for coverage
+        _reserveShares(maxCoverage, id);
         totalActiveCoverage += maxCoverage;
+        activeCoverageByHazard[hazard] += maxCoverage;
 
-        _mint(receiver, id, 1, ""); // supply fixed to 1
+        _mint(receiver, id, 1, "");
 
         emit PolicyPurchased(
-            id,
-            receiver,
-            hazard,
-            block.timestamp,
-            block.timestamp + durationDays * 1 days,
-            maxCoverage,
-            triggerThreshold,
-            lat,
-            lon
+            id, receiver, hazard,
+            block.timestamp, block.timestamp + durationDays * 1 days,
+            maxCoverage, triggerThreshold, lat, lon
         );
     }
 
@@ -197,17 +317,43 @@ contract policyManager is ERC1155, Ownable {
         external
         returns (uint256[] memory ids)
     {
+        _syncVaultCaps();
         uint256 n = inputs.length;
         require(n != 0, "empty");
         ids = new uint256[](n);
 
+        // Single transfer of total premium
         uint256 totalPremium;
         for (uint256 i; i < n; ++i) totalPremium += inputs[i].premium;
-
         asset.transferFrom(msg.sender, address(this), totalPremium);
-        asset.approve(address(vault), totalPremium);
-        vault.deposit(totalPremium, address(this));
 
+        // Split and deposit total premium to three vaults
+        // (uses aggregate capital ratios for the split)
+        IFeeRateModel.FeeAllocation memory alloc = feeRateModel.getFeeSplit(
+            totalPremium,
+            juniorVault.totalAssets(),
+            seniorVault.totalAssets(),
+            underwriterVault.totalAssets()
+        );
+
+        uint256 juniorTotal = (totalPremium * alloc.juniorBps) / 10000;
+        uint256 seniorTotal = (totalPremium * alloc.seniorBps) / 10000;
+        uint256 uwTotal = totalPremium - juniorTotal - seniorTotal;
+
+        if (juniorTotal > 0) {
+            asset.approve(address(juniorVault), juniorTotal);
+            juniorVault.deposit(juniorTotal, address(this));
+        }
+        if (seniorTotal > 0) {
+            asset.approve(address(seniorVault), seniorTotal);
+            seniorVault.deposit(seniorTotal, address(this));
+        }
+        if (uwTotal > 0) {
+            asset.approve(address(underwriterVault), uwTotal);
+            underwriterVault.deposit(uwTotal, address(this));
+        }
+
+        // Create individual policies and reserve shares
         for (uint256 i; i < n; ++i) {
             PolicyInput calldata in_ = inputs[i];
             require(validHazards[in_.hazard], "invalid hazard type");
@@ -227,26 +373,24 @@ contract policyManager is ERC1155, Ownable {
                 paid: false
             });
 
-            // Reserve up to the shares needed; partial reservation accepted for pro-rata payouts.
-            uint256 sharesToReserve = vault.previewWithdraw(in_.maxCoverage);
-            reservedShares[id] = vault.reserveShares(sharesToReserve);
+            _reserveShares(in_.maxCoverage, id);
             totalActiveCoverage += in_.maxCoverage;
+            activeCoverageByHazard[in_.hazard] += in_.maxCoverage;
 
             _mint(receiver, id, 1, "");
 
             emit PolicyPurchased(
-                id,
-                receiver,
-                in_.hazard,
-                block.timestamp,
-                block.timestamp + in_.durationDays * 1 days,
-                in_.maxCoverage,
-                in_.triggerThreshold,
-                in_.lat,
-                in_.lon
+                id, receiver, in_.hazard,
+                block.timestamp, block.timestamp + in_.durationDays * 1 days,
+                in_.maxCoverage, in_.triggerThreshold, in_.lat, in_.lon
             );
         }
+
+        // Emit aggregate distribution (use id=0 for batch)
+        emit PremiumDistributed(0, juniorTotal, seniorTotal, uwTotal);
     }
+
+    // ── Payout ───────────────────────────────────────────────────────────────
 
     function triggerPayout(uint256 id, int256 observedValue, uint256 payout) external {
         require(msg.sender == oracle, "not oracle");
@@ -264,82 +408,114 @@ contract policyManager is ERC1155, Ownable {
         address holder = holderOf[id];
         require(holder != address(0), "no holder");
 
-        // Pro-rata payout: each policy receives a share of vault assets proportional
-        // to its maxCoverage. If vault is fully funded (totalAssets >= totalActiveCoverage),
-        // the full requested payout is paid. Otherwise each policy is paid proportionally.
-        uint256 reserved = reservedShares[id];
-        uint256 vaultAssets = vault.totalAssets();
+        // Pro-rata check: if totalActiveCoverage > totalVaultAssets, scale payout
+        // to prevent one claim from draining all vaults
+        uint256 totalVaultAssets = _totalVaultAssets();
         uint256 totalCoverage = totalActiveCoverage;
 
         uint256 proRataMax = totalCoverage > 0
-            ? (vaultAssets * p.maxCoverage) / totalCoverage
+            ? (totalVaultAssets * p.maxCoverage) / totalCoverage
             : 0;
         uint256 actualPayout = payout < proRataMax ? payout : proRataMax;
 
-        // Also cap by what the reserved shares can actually redeem (protects against
-        // payout exceeding this policy's locked collateral).
-        uint256 maxFromReserved = vault.previewRedeem(reserved);
+        // Also cap by what reserved shares across all vaults can redeem
+        VaultReservations memory res = vaultReservedShares[id];
+        uint256 maxFromReserved = 0;
+        if (res.underwriterShares > 0) maxFromReserved += underwriterVault.previewRedeem(res.underwriterShares);
+        if (res.juniorShares > 0) maxFromReserved += juniorVault.previewRedeem(res.juniorShares);
+        if (res.seniorShares > 0) maxFromReserved += seniorVault.previewRedeem(res.seniorShares);
         if (actualPayout > maxFromReserved) actualPayout = maxFromReserved;
 
         p.paid = true;
-        reservedShares[id] = 0;
         totalActiveCoverage -= p.maxCoverage;
+        activeCoverageByHazard[p.hazard] -= p.maxCoverage;
 
-        // Withdraw using special payout function that handles reserved shares
-        vault.withdrawForPayout(actualPayout, holder, reserved);
+        // Waterfall withdrawal: underwriter → junior → senior
+        uint256 remaining = actualPayout;
+
+        if (remaining > 0 && res.underwriterShares > 0) {
+            uint256 uwMax = underwriterVault.previewRedeem(res.underwriterShares);
+            uint256 fromUw = remaining < uwMax ? remaining : uwMax;
+            if (fromUw > 0) {
+                underwriterVault.withdrawForPayout(fromUw, holder, res.underwriterShares);
+                remaining -= fromUw;
+            }
+        }
+
+        if (remaining > 0 && res.juniorShares > 0) {
+            uint256 jrMax = juniorVault.previewRedeem(res.juniorShares);
+            uint256 fromJr = remaining < jrMax ? remaining : jrMax;
+            if (fromJr > 0) {
+                juniorVault.withdrawForPayout(fromJr, holder, res.juniorShares);
+                remaining -= fromJr;
+            }
+        }
+
+        if (remaining > 0 && res.seniorShares > 0) {
+            uint256 srMax = seniorVault.previewRedeem(res.seniorShares);
+            uint256 fromSr = remaining < srMax ? remaining : srMax;
+            if (fromSr > 0) {
+                seniorVault.withdrawForPayout(fromSr, holder, res.seniorShares);
+                remaining -= fromSr;
+            }
+        }
+
+        // If payout didn't use all reserved shares, unreserve remainders
+        // (withdrawForPayout already unreserves the full reservation per vault)
+        // Clean up mapping
+        delete vaultReservedShares[id];
 
         emit PayoutTriggered(id, holder, observedValue, payout, actualPayout);
     }
 
-    // Release reserved shares for expired policies that were not triggered
+    // ── Expired policy release ───────────────────────────────────────────────
+
     function releaseExpiredPolicy(uint256 id) external {
         Policy storage p = policies[id];
         require(block.timestamp > p.end, "not expired");
         require(!p.paid, "already paid");
 
-        uint256 reserved = reservedShares[id];
-        require(reserved > 0, "no shares reserved");
+        VaultReservations memory res = vaultReservedShares[id];
+        require(
+            res.underwriterShares > 0 || res.juniorShares > 0 || res.seniorShares > 0,
+            "no shares reserved"
+        );
 
-        // Mark as paid to prevent future claims
         p.paid = true;
-
-        // Unreserve the shares so underwriters can withdraw
-        require(vault.unreserveShares(reserved), "unreserve failed");
-        reservedShares[id] = 0;
+        uint256 totalReleased = _unreserveAll(id);
         totalActiveCoverage -= p.maxCoverage;
+        activeCoverageByHazard[p.hazard] -= p.maxCoverage;
 
-        emit PolicyExpiredReleased(id, reserved);
+        emit PolicyExpiredReleased(id, totalReleased);
     }
 
-    // Batch release for multiple expired policies
     function releaseExpiredPolicies(uint256[] calldata ids) external {
         for (uint256 i = 0; i < ids.length; i++) {
             uint256 id = ids[i];
             Policy storage p = policies[id];
 
-            // Skip if not expired or already paid
             if (block.timestamp <= p.end || p.paid) continue;
 
-            uint256 reserved = reservedShares[id];
-            if (reserved == 0) continue;
+            VaultReservations memory res = vaultReservedShares[id];
+            if (res.underwriterShares == 0 && res.juniorShares == 0 && res.seniorShares == 0) continue;
 
             p.paid = true;
-            require(vault.unreserveShares(reserved), "unreserve failed");
-            reservedShares[id] = 0;
+            uint256 totalReleased = _unreserveAll(id);
             totalActiveCoverage -= p.maxCoverage;
+            activeCoverageByHazard[p.hazard] -= p.maxCoverage;
 
-            emit PolicyExpiredReleased(id, reserved);
+            emit PolicyExpiredReleased(id, totalReleased);
         }
     }
 
-    // Keeps holderOf accurate for transferable policies (OZ v5)
+    // ── ERC-1155 transfer hook ───────────────────────────────────────────────
+
     function _update(
         address from,
         address to,
         uint256[] memory ids,
         uint256[] memory values
     ) internal override {
-        // enforce supply=1 and non-fractional transfers
         for (uint256 i; i < ids.length; ++i) {
             require(values[i] == 1, "policy amount must be 1");
         }
@@ -350,18 +526,12 @@ contract policyManager is ERC1155, Ownable {
             uint256 id = ids[i];
 
             if (to == address(0)) {
-                // burn
                 holderOf[id] = address(0);
             } else {
-                // mint or transfer
-                // since supply=1, the receiver is always the current holder
                 holderOf[id] = to;
-
-                // safety: ensure receiver doesn't end up with >1
                 require(balanceOf(to, id) == 1, "invalid balance");
             }
 
-            // safety: ensure sender doesn't keep any (for transfers)
             if (from != address(0) && to != address(0)) {
                 require(balanceOf(from, id) == 0, "sender still holds");
             }

@@ -55,7 +55,28 @@ export const PolicyManagerAbi = [
   },
   {
     type: 'function',
-    name: 'vault',
+    name: 'underwriterVault',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'juniorVault',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'seniorVault',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'feeRateModel',
     inputs: [],
     outputs: [{ name: '', type: 'address' }],
     stateMutability: 'view',
@@ -80,6 +101,17 @@ export const PolicyManagerAbi = [
     inputs: [{ name: '', type: 'uint8' }],
     outputs: [{ name: '', type: 'bool' }],
     stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    name: 'PremiumDistributed',
+    inputs: [
+      { name: 'policyId', type: 'uint256', indexed: true },
+      { name: 'juniorAmount', type: 'uint256', indexed: false },
+      { name: 'seniorAmount', type: 'uint256', indexed: false },
+      { name: 'underwriterAmount', type: 'uint256', indexed: false },
+    ],
+    anonymous: false,
   },
   {
     type: 'event',

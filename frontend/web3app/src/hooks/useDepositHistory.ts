@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { PolicyManagerAbi } from '../abi/PolicyManager'
-import { VAULT_ADDRESS, POLICY_MANAGER_ADDRESS } from '../config/contracts'
+import { UNDERWRITER_VAULT_ADDRESS, POLICY_MANAGER_ADDRESS } from '../config/contracts'
 import { useViemClients } from './useWalletClient'
 
 export interface ChartPoint {
@@ -32,7 +32,7 @@ export function useDepositHistory() {
       // Fetch all relevant events in parallel
       const [depositLogs, purchaseLogs, payoutLogs, expiredLogs] = await Promise.all([
         publicClient.getLogs({
-          address: VAULT_ADDRESS,
+          address: UNDERWRITER_VAULT_ADDRESS,
           event: {
             type: 'event',
             name: 'Deposit',
