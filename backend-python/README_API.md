@@ -28,6 +28,32 @@ uvicorn api:app --host 0.0.0.0 --port 8000
 
 ## 📚 API Endpoints
 
+#### `POST /threshold`
+Calculate the trigger threshold (in physical units) that corresponds to a desired monthly exceedance probability for the nearest site and hazard.
+
+**Request Body:**
+```json
+{
+  "lat": 39.7392,
+  "lon": -104.9903,
+  "hazard": "heatwave",
+  "exceedance_prob": 0.10
+}
+```
+
+**Response:**
+```json
+{
+  "hazard": "heatwave",
+  "threshold": 33.2,
+  "unit": "C",
+  "exceedance_prob": 0.10,
+  "direction": "high_is_bad",
+  "site_id": "nearest_site",
+  "distribution": "genextreme"
+}
+```
+
 #### `POST /premium`
 Calculate insurance premium for a location and hazard.
 
@@ -291,9 +317,11 @@ app.add_middleware(
 
 ## 📝 Notes
 
-- Premium calculations use statistical distributions fitted to historical weather data
-- Real event checking uses the Open-Meteo API for weather observations
-- Simulated events are useful for demos without making external API calls
+- Premium calculations use statistical distributions fitted to historical weather data from Open-Meteo
+- The `/threshold` endpoint is used by the frontend to auto-suggest trigger thresholds based on a desired exceedance probability
+- Real event checking (`/check-event`) uses the Open-Meteo API for weather observations
+- On-chain payout triggering is handled by the **CRE workflow** (`cre_chainlink/parametrix/payout_trigger/`), not by this API. The CRE workflow fetches weather data directly from Open-Meteo and calls `triggerPayout()` on the PolicyManager contract
+- Simulated events (`/simulate-event`) are useful for demos without making external API calls
 
 ## 🆘 Troubleshooting
 

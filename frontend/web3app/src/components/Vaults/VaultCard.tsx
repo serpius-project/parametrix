@@ -17,13 +17,13 @@ interface VaultCardProps {
 const RISK_INFO = {
   Underwriter: {
     badge: 'Highest Risk / Highest Yield',
-    description: 'First-loss tranche. Absorbs losses first. Receives the largest share of premiums.',
+    description: 'First payer reserve. Pays claims first and receives a share of premiums.',
     color: '#ef4444',
     tranche: 'underwriter' as const,
   },
   Junior: {
     badge: 'Higher Risk / Higher Yield',
-    description: 'Mezzanine tranche. Absorbs losses after the underwriter vault. Receives a larger share of premiums.',
+    description: 'First-loss tranche. Absorbs losses after the Underwriter vault. Receives a larger share of premiums.',
     color: '#f59e0b',
     tranche: 'junior' as const,
   },
@@ -33,7 +33,7 @@ const RISK_INFO = {
     color: '#22c55e',
     tranche: 'senior' as const,
   },
-}
+} as const
 
 function formatLockupRemaining(depositTimestamp: bigint, lockupDuration: bigint): string {
   const unlockTime = Number(depositTimestamp) + Number(lockupDuration)
