@@ -160,6 +160,27 @@ cre workflow simulate ./payout_trigger
 # Select option 1: cron-trigger
 ```
 
+### Expected output (underwriter)
+
+```
+Workflow compiled
+2026-02-27T12:07:09Z [SIMULATION] Simulator Initialized
+2026-02-27T12:07:09Z [USER LOG] Running CronTrigger for underwriter verification
+2026-02-27T12:07:09Z [USER LOG] Starting underwriter verification...
+2026-02-27T12:07:09Z [USER LOG] Next policy ID: 2
+2026-02-27T12:07:09Z [USER LOG] Found 1 unverified policies
+2026-02-27T12:07:09Z [USER LOG] Grouped into 1 unique (location, hazard) groups
+2026-02-27T12:07:09Z [USER LOG] Processing 1 groups starting at offset 0 of 1 total
+2026-02-27T12:07:09Z [USER LOG] Fetching premium for group 47.378,8.5404,flood (1 policies, hazard=flood)
+2026-02-27T12:07:09Z [USER LOG] Group 47.378,8.5404,flood: API minimum premium = 281.47 USDC (281470000 raw)
+2026-02-27T12:07:09Z [USER LOG] Policy 1: onChainPremium=300000000, minimumRequired=281470000
+2026-02-27T12:07:09Z [USER LOG] Submitting verifyPolicy for policy 1
+2026-02-27T12:07:09Z [USER LOG] verifyPolicy succeeded
+Workflow Simulation Result: "Verified 1, rejected 0 out of 1 unverified policies (1 HTTP calls)"
+```
+
+The underwriter scans for unverified policies, calls the Python pricing API to compute the fair premium, and compares it to the on-chain premium. If the premium is adequate, the policy is verified; otherwise it is rejected. Rejected policies lose their premium (no refund) and their reserved vault shares are released.
+
 ### Expected output (payout trigger)
 
 ```

@@ -5873,6 +5873,15 @@ var bytesToHex = (bytes) => {
 };
 var hexToBase64 = (hex) => {
   const cleanHex = hex.startsWith("0x") ? hex.slice(2) : hex;
+  if (cleanHex.length === 0) {
+    return "";
+  }
+  if (cleanHex.length % 2 !== 0) {
+    throw new Error(`Hex string must have an even number of characters: ${hex}`);
+  }
+  if (!/^[0-9a-fA-F]*$/.test(cleanHex)) {
+    throw new Error(`Invalid hex string: ${hex}`);
+  }
   return Buffer.from(cleanHex, "hex").toString("base64");
 };
 function createWriteCreReportRequest(input) {
@@ -6136,9 +6145,9 @@ class ClientLogTrigger {
     return rawOutput;
   }
 }
-var file_capabilities_networking_http_v1alpha_client = /* @__PURE__ */ fileDesc("CjFjYXBhYmlsaXRpZXMvbmV0d29ya2luZy9odHRwL3YxYWxwaGEvY2xpZW50LnByb3RvEiRjYXBhYmlsaXRpZXMubmV0d29ya2luZy5odHRwLnYxYWxwaGEiSgoNQ2FjaGVTZXR0aW5ncxINCgVzdG9yZRgBIAEoCBIqCgdtYXhfYWdlGAIgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uIqoCCgdSZXF1ZXN0EgsKA3VybBgBIAEoCRIOCgZtZXRob2QYAiABKAkSSwoHaGVhZGVycxgDIAMoCzI6LmNhcGFiaWxpdGllcy5uZXR3b3JraW5nLmh0dHAudjFhbHBoYS5SZXF1ZXN0LkhlYWRlcnNFbnRyeRIMCgRib2R5GAQgASgMEioKB3RpbWVvdXQYBSABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24SSwoOY2FjaGVfc2V0dGluZ3MYBiABKAsyMy5jYXBhYmlsaXRpZXMubmV0d29ya2luZy5odHRwLnYxYWxwaGEuQ2FjaGVTZXR0aW5ncxouCgxIZWFkZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKrAQoIUmVzcG9uc2USEwoLc3RhdHVzX2NvZGUYASABKA0STAoHaGVhZGVycxgCIAMoCzI7LmNhcGFiaWxpdGllcy5uZXR3b3JraW5nLmh0dHAudjFhbHBoYS5SZXNwb25zZS5IZWFkZXJzRW50cnkSDAoEYm9keRgDIAEoDBouCgxIZWFkZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ATKYAQoGQ2xpZW50EmwKC1NlbmRSZXF1ZXN0Ei0uY2FwYWJpbGl0aWVzLm5ldHdvcmtpbmcuaHR0cC52MWFscGhhLlJlcXVlc3QaLi5jYXBhYmlsaXRpZXMubmV0d29ya2luZy5odHRwLnYxYWxwaGEuUmVzcG9uc2UaIIK1GBwIAhIYaHR0cC1hY3Rpb25zQDEuMC4wLWFscGhhQuoBCihjb20uY2FwYWJpbGl0aWVzLm5ldHdvcmtpbmcuaHR0cC52MWFscGhhQgtDbGllbnRQcm90b1ABogIDQ05IqgIkQ2FwYWJpbGl0aWVzLk5ldHdvcmtpbmcuSHR0cC5WMWFscGhhygIkQ2FwYWJpbGl0aWVzXE5ldHdvcmtpbmdcSHR0cFxWMWFscGhh4gIwQ2FwYWJpbGl0aWVzXE5ldHdvcmtpbmdcSHR0cFxWMWFscGhhXEdQQk1ldGFkYXRh6gInQ2FwYWJpbGl0aWVzOjpOZXR3b3JraW5nOjpIdHRwOjpWMWFscGhhYgZwcm90bzM", [file_google_protobuf_duration, file_tools_generator_v1alpha_cre_metadata]);
-var RequestSchema = /* @__PURE__ */ messageDesc(file_capabilities_networking_http_v1alpha_client, 1);
-var ResponseSchema = /* @__PURE__ */ messageDesc(file_capabilities_networking_http_v1alpha_client, 2);
+var file_capabilities_networking_http_v1alpha_client = /* @__PURE__ */ fileDesc("CjFjYXBhYmlsaXRpZXMvbmV0d29ya2luZy9odHRwL3YxYWxwaGEvY2xpZW50LnByb3RvEiRjYXBhYmlsaXRpZXMubmV0d29ya2luZy5odHRwLnYxYWxwaGEiSgoNQ2FjaGVTZXR0aW5ncxINCgVzdG9yZRgBIAEoCBIqCgdtYXhfYWdlGAIgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uIh4KDEhlYWRlclZhbHVlcxIOCgZ2YWx1ZXMYASADKAki7wMKB1JlcXVlc3QSCwoDdXJsGAEgASgJEg4KBm1ldGhvZBgCIAEoCRJPCgdoZWFkZXJzGAMgAygLMjouY2FwYWJpbGl0aWVzLm5ldHdvcmtpbmcuaHR0cC52MWFscGhhLlJlcXVlc3QuSGVhZGVyc0VudHJ5QgIYARIMCgRib2R5GAQgASgMEioKB3RpbWVvdXQYBSABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24SSwoOY2FjaGVfc2V0dGluZ3MYBiABKAsyMy5jYXBhYmlsaXRpZXMubmV0d29ya2luZy5odHRwLnYxYWxwaGEuQ2FjaGVTZXR0aW5ncxJWCg1tdWx0aV9oZWFkZXJzGAcgAygLMj8uY2FwYWJpbGl0aWVzLm5ldHdvcmtpbmcuaHR0cC52MWFscGhhLlJlcXVlc3QuTXVsdGlIZWFkZXJzRW50cnkaLgoMSGVhZGVyc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEaZwoRTXVsdGlIZWFkZXJzRW50cnkSCwoDa2V5GAEgASgJEkEKBXZhbHVlGAIgASgLMjIuY2FwYWJpbGl0aWVzLm5ldHdvcmtpbmcuaHR0cC52MWFscGhhLkhlYWRlclZhbHVlczoCOAEi8QIKCFJlc3BvbnNlEhMKC3N0YXR1c19jb2RlGAEgASgNElAKB2hlYWRlcnMYAiADKAsyOy5jYXBhYmlsaXRpZXMubmV0d29ya2luZy5odHRwLnYxYWxwaGEuUmVzcG9uc2UuSGVhZGVyc0VudHJ5QgIYARIMCgRib2R5GAMgASgMElcKDW11bHRpX2hlYWRlcnMYBCADKAsyQC5jYXBhYmlsaXRpZXMubmV0d29ya2luZy5odHRwLnYxYWxwaGEuUmVzcG9uc2UuTXVsdGlIZWFkZXJzRW50cnkaLgoMSGVhZGVyc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEaZwoRTXVsdGlIZWFkZXJzRW50cnkSCwoDa2V5GAEgASgJEkEKBXZhbHVlGAIgASgLMjIuY2FwYWJpbGl0aWVzLm5ldHdvcmtpbmcuaHR0cC52MWFscGhhLkhlYWRlclZhbHVlczoCOAEymAEKBkNsaWVudBJsCgtTZW5kUmVxdWVzdBItLmNhcGFiaWxpdGllcy5uZXR3b3JraW5nLmh0dHAudjFhbHBoYS5SZXF1ZXN0Gi4uY2FwYWJpbGl0aWVzLm5ldHdvcmtpbmcuaHR0cC52MWFscGhhLlJlc3BvbnNlGiCCtRgcCAISGGh0dHAtYWN0aW9uc0AxLjAuMC1hbHBoYULqAQooY29tLmNhcGFiaWxpdGllcy5uZXR3b3JraW5nLmh0dHAudjFhbHBoYUILQ2xpZW50UHJvdG9QAaICA0NOSKoCJENhcGFiaWxpdGllcy5OZXR3b3JraW5nLkh0dHAuVjFhbHBoYcoCJENhcGFiaWxpdGllc1xOZXR3b3JraW5nXEh0dHBcVjFhbHBoYeICMENhcGFiaWxpdGllc1xOZXR3b3JraW5nXEh0dHBcVjFhbHBoYVxHUEJNZXRhZGF0YeoCJ0NhcGFiaWxpdGllczo6TmV0d29ya2luZzo6SHR0cDo6VjFhbHBoYWIGcHJvdG8z", [file_google_protobuf_duration, file_tools_generator_v1alpha_cre_metadata]);
+var RequestSchema = /* @__PURE__ */ messageDesc(file_capabilities_networking_http_v1alpha_client, 2);
+var ResponseSchema = /* @__PURE__ */ messageDesc(file_capabilities_networking_http_v1alpha_client, 3);
 
 class SendRequester {
   runtime;
@@ -11132,7 +11141,7 @@ class NetworkLookup {
         return;
       return map.get(chainSelector);
     };
-    if (!chainSelector && !chainSelectorName) {
+    if (chainSelector === undefined && !chainSelectorName) {
       return;
     }
     if (chainFamily && chainSelector !== undefined) {
@@ -11291,7 +11300,7 @@ class Int64 {
     return safe ? new Int64(this.value * i2.value) : new Int64(BigInt.asIntN(64, this.value * i2.value));
   }
   div(i2, safe = true) {
-    return new Int64(this.value / i2.value);
+    return safe ? new Int64(this.value / i2.value) : new Int64(BigInt.asIntN(64, this.value / i2.value));
   }
 }
 
@@ -11311,7 +11320,7 @@ class UInt64 {
       return v;
     }
     if (!Number.isFinite(v) || !Number.isInteger(v))
-      throw new Error("int64 requires an integer number");
+      throw new Error("uint64 requires an integer number");
     const bi = BigInt(v);
     if (bi > UInt64.UINT64_MAX)
       throw new Error("uint64 overflow");
@@ -11332,7 +11341,7 @@ class UInt64 {
     return safe ? new UInt64(this.value * i2.value) : new UInt64(BigInt.asUintN(64, this.value * i2.value));
   }
   div(i2, safe = true) {
-    return new UInt64(this.value / i2.value);
+    return safe ? new UInt64(this.value / i2.value) : new UInt64(BigInt.asUintN(64, this.value / i2.value));
   }
 }
 
@@ -11340,8 +11349,8 @@ class Decimal {
   coeffecient;
   exponent;
   static parse(s) {
-    const m = /^([+-])?(\d+)(?:\.(\d+))?$/.exec(s.trim());
-    if (!m)
+    const m = /^([+-])?(\d*)(?:\.(\d*))?$/.exec(s.trim());
+    if (!m || m[2] === "" && (m[3] === undefined || m[3] === ""))
       throw new Error("invalid decimal string");
     const signStr = m[1] ?? "+";
     const intPart = m[2] ?? "0";
@@ -11578,7 +11587,7 @@ function unwrap(value) {
   }
 }
 function isValueProto(value) {
-  return value.$typeName && typeof value.$typeName === "string" && value.$typeName === "values.v1.Value";
+  return value != null && typeof value.$typeName === "string" && value.$typeName === "values.v1.Value";
 }
 async function standardValidate(schema, input) {
   let result = schema["~standard"].validate(input);
@@ -15588,7 +15597,7 @@ var validateGlobalHostBindings = () => {
     return globalHostBindingsSchema.parse(globalFunctions);
   } catch (error) {
     const missingFunctions = Object.keys(globalHostBindingsSchema.shape).filter((key) => !(key in globalFunctions));
-    throw new Error(`Missing required global host functions: ${missingFunctions.join(", ")}. ` + `This indicates the runtime environment is not properly configured.`);
+    throw new Error(`Missing required global host functions: ${missingFunctions.join(", ")}. ` + `The CRE WASM runtime must provide these functions on globalThis. ` + `This usually means the workflow is being executed outside the CRE WASM environment, ` + `or the host runtime version is incompatible with this SDK version.`);
   }
 };
 var _hostBindings = null;
@@ -15670,6 +15679,7 @@ class CapabilityError extends Error {
 class DonModeError extends Error {
   constructor() {
     super("cannot use Runtime inside RunInNodeMode");
+    this.name = "DonModeError";
   }
 }
 
@@ -15684,9 +15694,10 @@ class SecretsError extends Error {
   secretRequest;
   error;
   constructor(secretRequest, error) {
-    super(`error fetching ${secretRequest}: ${error}`);
+    super(`secret retrieval failed for ${secretRequest.id || "unknown"} (namespace: ${secretRequest.namespace || "default"}): ${error}. Verify the secret name is correct and that the secret has been configured for this workflow`);
     this.secretRequest = secretRequest;
     this.error = error;
+    this.name = "SecretsError";
   }
 }
 
@@ -15723,7 +15734,7 @@ class BaseRuntimeImpl {
     if (!this.helpers.call(req)) {
       return {
         result: () => {
-          throw new CapabilityError(`Capability not found ${capabilityId}`, {
+          throw new CapabilityError(`Capability '${capabilityId}' not found: the host rejected the call to method '${method}'. Verify the capability ID is correct and the capability is available in this CRE environment`, {
             callbackId,
             method,
             capabilityId
@@ -15751,7 +15762,7 @@ class BaseRuntimeImpl {
     const awaitResponse = this.helpers.await(awaitRequest, this.maxResponseSize);
     const capabilityResponse = awaitResponse.responses[callbackId];
     if (!capabilityResponse) {
-      throw new CapabilityError(`No response found for callback ID ${callbackId}`, {
+      throw new CapabilityError(`No response found for capability '${capabilityId}' method '${method}' (callback ID ${callbackId}): the host returned a response map that does not contain an entry for this call`, {
         capabilityId,
         method,
         callbackId
@@ -15763,7 +15774,7 @@ class BaseRuntimeImpl {
         try {
           return anyUnpack(response.value, outputSchema);
         } catch {
-          throw new CapabilityError(`Error cannot unwrap payload`, {
+          throw new CapabilityError(`Failed to deserialize response payload for capability '${capabilityId}' method '${method}': the response could not be unpacked into the expected output schema`, {
             capabilityId,
             method,
             callbackId
@@ -15771,13 +15782,13 @@ class BaseRuntimeImpl {
         }
       }
       case "error":
-        throw new CapabilityError(`Error ${response.value}`, {
+        throw new CapabilityError(`Capability '${capabilityId}' method '${method}' returned an error: ${response.value}`, {
           capabilityId,
           method,
           callbackId
         });
       default:
-        throw new CapabilityError(`Error cannot unwrap ${response.case}`, {
+        throw new CapabilityError(`Unexpected response type '${response.case}' for capability '${capabilityId}' method '${method}': expected 'payload' or 'error'`, {
           capabilityId,
           method,
           callbackId
@@ -15954,6 +15965,12 @@ class Runtime extends RuntimeImpl {
     super(config, nextCallId, WasmRuntimeHelpers.getInstance(), maxResponseSize);
   }
 }
+function toI32ResponseSize(maxResponseSize) {
+  if (maxResponseSize > 2147483647n || maxResponseSize < -2147483648n) {
+    throw new Error(`maxResponseSize ${maxResponseSize} exceeds i32 range. Expected a value between -2147483648 and 2147483647`);
+  }
+  return Math.trunc(Number(maxResponseSize));
+}
 
 class WasmRuntimeHelpers {
   static instance;
@@ -15971,17 +15988,17 @@ class WasmRuntimeHelpers {
     return hostBindings.callCapability(toBinary(CapabilityRequestSchema, request)) >= 0;
   }
   await(request, maxResponseSize) {
-    const responseSize = Math.trunc(Number(maxResponseSize));
+    const responseSize = toI32ResponseSize(maxResponseSize);
     const response = hostBindings.awaitCapabilities(toBinary(AwaitCapabilitiesRequestSchema, request), responseSize);
     const responseBytes = Array.isArray(response) ? new Uint8Array(response) : response;
     return fromBinary(AwaitCapabilitiesResponseSchema, responseBytes);
   }
   getSecrets(request, maxResponseSize) {
-    const responseSize = Math.trunc(Number(maxResponseSize));
+    const responseSize = toI32ResponseSize(maxResponseSize);
     return hostBindings.getSecrets(toBinary(GetSecretsRequestSchema, request), responseSize) >= 0;
   }
   awaitSecrets(request, maxResponseSize) {
-    const responseSize = Math.trunc(Number(maxResponseSize));
+    const responseSize = toI32ResponseSize(maxResponseSize);
     const response = hostBindings.awaitSecrets(toBinary(AwaitSecretsRequestSchema, request), responseSize);
     const responseBytes = Array.isArray(response) ? new Uint8Array(response) : response;
     return fromBinary(AwaitSecretsResponseSchema, responseBytes);
@@ -16013,10 +16030,10 @@ class Runner {
     try {
       args = JSON.parse(argsString);
     } catch (e) {
-      throw new Error("Invalid request: could not parse arguments");
+      throw new Error("Invalid request: could not parse WASI arguments as JSON. Ensure the WASM runtime is passing valid arguments to the workflow");
     }
     if (args.length !== 2) {
-      throw new Error("Invalid request: must contain payload");
+      throw new Error(`Invalid request: expected exactly 2 WASI arguments (script name and base64-encoded request payload), but received ${args.length}`);
     }
     const base64Request = args[1];
     const bytes = Buffer.from(base64Request, "base64");
@@ -16024,7 +16041,7 @@ class Runner {
   }
   async run(initFn) {
     const runtime = new Runtime(this.config, 0, this.request.maxResponseSize);
-    var result;
+    let result;
     try {
       const workflow = await initFn(this.config, {
         getSecret: runtime.getSecret.bind(runtime)
@@ -16037,7 +16054,7 @@ class Runner {
           result = this.handleExecutionPhase(this.request, workflow, runtime);
           break;
         default:
-          throw new Error("Unknown request type");
+          throw new Error(`Unknown request type '${this.request.request.case}': expected 'subscribe' or 'trigger'. This may indicate a version mismatch between the SDK and the CRE runtime`);
       }
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e);
@@ -16050,17 +16067,25 @@ class Runner {
   }
   async handleExecutionPhase(req, workflow, runtime) {
     if (req.request.case !== "trigger") {
-      throw new Error("cannot handle non-trigger request as a trigger");
+      throw new Error(`cannot handle non-trigger request as a trigger: received request type '${req.request.case}' in handleExecutionPhase. This is an internal SDK error`);
     }
     const triggerMsg = req.request.value;
     const id = BigInt(triggerMsg.id);
     if (id > BigInt(Number.MAX_SAFE_INTEGER)) {
-      throw new Error(`Trigger ID ${id} exceeds safe integer range`);
+      throw new Error(`Trigger ID ${id} exceeds JavaScript safe integer range (Number.MAX_SAFE_INTEGER = ${Number.MAX_SAFE_INTEGER}). This trigger ID cannot be safely represented as a number`);
     }
     const index = Number(triggerMsg.id);
     if (Number.isFinite(index) && index >= 0 && index < workflow.length) {
       const entry = workflow[index];
       const schema = entry.trigger.outputSchema();
+      if (!triggerMsg.payload) {
+        return create(ExecutionResultSchema, {
+          result: {
+            case: "error",
+            value: `trigger payload is missing for handler at index ${index} (trigger ID ${triggerMsg.id}). The trigger event must include a payload`
+          }
+        });
+      }
       const payloadAny = triggerMsg.payload;
       const decoded = fromBinary(schema, payloadAny.value);
       const adapted = entry.trigger.adapt(decoded);
@@ -16078,13 +16103,19 @@ class Runner {
       }
     }
     return create(ExecutionResultSchema, {
-      result: { case: "error", value: "trigger not found" }
+      result: {
+        case: "error",
+        value: `trigger not found: no workflow handler registered at index ${index} (trigger ID ${triggerMsg.id}). The workflow has ${workflow.length} handler(s) registered. Verify the trigger subscription matches a registered handler`
+      }
     });
   }
   handleSubscribePhase(req, workflow) {
     if (req.request.case !== "subscribe") {
       return create(ExecutionResultSchema, {
-        result: { case: "error", value: "subscribe request expected" }
+        result: {
+          case: "error",
+          value: `subscribe request expected but received '${req.request.case}' in handleSubscribePhase. This is an internal SDK error`
+        }
       });
     }
     const subscriptions = workflow.map((entry) => ({
@@ -16120,6 +16151,11 @@ var prepareErrorResponse = (error) => {
 var sendErrorResponse = (error) => {
   const payload = prepareErrorResponse(error);
   if (payload === null) {
+    console.error("Failed to serialize error response: the error could not be converted to a string. Original error:", error);
+    const fallback = prepareErrorResponse("Unknown error: the original error could not be serialized");
+    if (fallback !== null) {
+      hostBindings.sendResponse(fallback);
+    }
     return;
   }
   hostBindings.sendResponse(payload);
@@ -16305,12 +16341,13 @@ var PolicyManager = [
 ];
 var configSchema = exports_external.object({
   schedule: exports_external.string(),
-  lookbackMonths: exports_external.number().int().min(1).max(24),
+  minLoadingFactor: exports_external.number().min(0).max(1),
   evms: exports_external.array(exports_external.object({
     policyManagerAddress: exports_external.string(),
     chainSelectorName: exports_external.string(),
     gasLimit: exports_external.string()
-  }))
+  })),
+  apiUrl: exports_external.string()
 });
 var MAX_HTTP_CALLS = 5;
 var MAX_EVM_READS = 10;
@@ -16331,173 +16368,8 @@ var HAZARD_ID_TO_NAME = {
   1: "flood",
   2: "drought"
 };
-var HAZARD_API_CONFIG = {
-  heatwave: {
-    url: "https://archive-api.open-meteo.com/v1/archive",
-    dailyVars: "wet_bulb_temperature_2m_max",
-    aggregation: "max"
-  },
-  flood: {
-    url: "https://flood-api.open-meteo.com/v1/flood",
-    dailyVars: "river_discharge",
-    aggregation: "max"
-  },
-  drought: {
-    url: "https://archive-api.open-meteo.com/v1/archive",
-    dailyVars: "temperature_2m_mean,precipitation_sum",
-    aggregation: "thornthwaite"
-  }
-};
-var aggregateMonthly = (dates, values, method) => {
-  const monthly = {};
-  for (let i2 = 0;i2 < dates.length; i2++) {
-    const v = values[i2];
-    if (v === null || v === undefined)
-      continue;
-    const monthKey = dates[i2].slice(0, 7) + "-01";
-    if (!monthly[monthKey])
-      monthly[monthKey] = [];
-    monthly[monthKey].push(v);
-  }
-  const result = [];
-  for (const monthKey of Object.keys(monthly).sort()) {
-    const vals = monthly[monthKey];
-    if (!vals.length)
-      continue;
-    let agg;
-    if (method === "max") {
-      agg = Math.max(...vals);
-    } else {
-      agg = vals.reduce((a, b) => a + b, 0) / vals.length;
-    }
-    result.push({ date: monthKey, value: agg });
-  }
-  return result;
-};
-var computeThornthwaiteDeficit = (dates, temps, precips) => {
-  const monthlyData = {};
-  for (let i2 = 0;i2 < dates.length; i2++) {
-    const t = temps[i2];
-    const p = precips[i2];
-    if (t === null || t === undefined || p === null || p === undefined)
-      continue;
-    const monthKey = dates[i2].slice(0, 7) + "-01";
-    if (!monthlyData[monthKey])
-      monthlyData[monthKey] = { temps: [], precips: [] };
-    monthlyData[monthKey].temps.push(t);
-    monthlyData[monthKey].precips.push(p);
-  }
-  const sortedMonths = Object.keys(monthlyData).sort();
-  if (sortedMonths.length < 2)
-    return [];
-  const monthlyTemps = [];
-  const monthlyPrecips = [];
-  for (const m of sortedMonths) {
-    const d = monthlyData[m];
-    monthlyTemps.push(d.temps.reduce((a, b) => a + b, 0) / d.temps.length);
-    monthlyPrecips.push(d.precips.reduce((a, b) => a + b, 0));
-  }
-  const heatIndices = monthlyTemps.map((t) => Math.pow(Math.max(t, 0) / 5, 1.514));
-  const annualI = [];
-  for (let i2 = 0;i2 < heatIndices.length; i2++) {
-    const windowStart = Math.max(0, i2 - 5);
-    const windowEnd = Math.min(heatIndices.length, i2 + 7);
-    let sum = 0;
-    let count = 0;
-    for (let j = windowStart;j < windowEnd; j++) {
-      sum += heatIndices[j];
-      count++;
-    }
-    annualI.push(count > 0 ? sum / count * 12 : 0);
-  }
-  const result = [];
-  for (let i2 = 0;i2 < sortedMonths.length; i2++) {
-    const Ia = annualI[i2] || 1;
-    const T = Math.max(monthlyTemps[i2], 0);
-    const a = 0.000000675 * Math.pow(Ia, 3) - 0.0000771 * Math.pow(Ia, 2) + 0.0179 * Ia + 0.492;
-    const pet = Ia > 0 ? 16 * Math.pow(10 * T / Ia, a) : 0;
-    const deficit = monthlyPrecips[i2] - pet;
-    result.push({ date: sortedMonths[i2], value: deficit });
-  }
-  return result;
-};
-var evaluateTrigger = (value2, threshold, hazard) => {
-  if (hazard === "flood" || hazard === "heatwave") {
-    return value2 > threshold;
-  }
-  return value2 < threshold;
-};
-var buildOpenMeteoUrl = (policy, lookbackMonths) => {
-  const cfg = HAZARD_API_CONFIG[policy.hazardName];
-  if (!cfg)
-    throw new Error(`No API config for hazard: ${policy.hazardName}`);
-  const effectiveLookback = policy.hazardName === "drought" ? Math.max(lookbackMonths, 14) : lookbackMonths;
-  const now = new Date;
-  const startDate = new Date(now.getTime() - effectiveLookback * 31 * 24 * 60 * 60 * 1000);
-  startDate.setDate(1);
-  const formatDate = (d) => d.toISOString().slice(0, 10);
-  const parts = [
-    `latitude=${policy.lat}`,
-    `longitude=${policy.lon}`,
-    `daily=${cfg.dailyVars}`,
-    `start_date=${formatDate(startDate)}`,
-    `end_date=${formatDate(now)}`,
-    `timezone=UTC`
-  ];
-  if (cfg.extraParams) {
-    for (const k of Object.keys(cfg.extraParams)) {
-      parts.push(`${k}=${cfg.extraParams[k]}`);
-    }
-  }
-  return `${cfg.url}?${parts.join("&")}`;
-};
-var createWeatherFetcher = (policy) => (sendRequester, config) => {
-  const cfg = HAZARD_API_CONFIG[policy.hazardName];
-  if (!cfg)
-    throw new Error(`No API config for hazard: ${policy.hazardName}`);
-  const url = buildOpenMeteoUrl(policy, config.lookbackMonths);
-  const response = sendRequester.sendRequest({
-    method: "GET",
-    url
-  }).result();
-  if (response.statusCode !== 200) {
-    throw new Error(`Open-Meteo API returned status ${response.statusCode}`);
-  }
-  const responseText = Buffer.from(response.body).toString("utf-8");
-  const data = JSON.parse(responseText);
-  if (!data.daily || !data.daily.time) {
-    throw new Error("Open-Meteo response missing daily data");
-  }
-  const dates = data.daily.time;
-  let observedValue;
-  if (cfg.aggregation === "thornthwaite") {
-    const temps = data.daily.temperature_2m_mean;
-    const precips = data.daily.precipitation_sum;
-    const monthly = computeThornthwaiteDeficit(dates, temps, precips);
-    if (monthly.length === 0) {
-      throw new Error("Insufficient data for Thornthwaite calculation");
-    }
-    observedValue = monthly[monthly.length - 1].value;
-  } else {
-    const varName = cfg.dailyVars.split(",")[0];
-    const values = data.daily[varName];
-    if (!values) {
-      throw new Error(`Open-Meteo response missing variable: ${varName}`);
-    }
-    const monthly = aggregateMonthly(dates, values, cfg.aggregation);
-    if (monthly.length === 0) {
-      throw new Error("No monthly data after aggregation");
-    }
-    observedValue = monthly[monthly.length - 1].value;
-  }
-  const triggered = evaluateTrigger(observedValue, policy.triggerThreshold, policy.hazardName);
-  return {
-    triggered: triggered ? 1 : 0,
-    value: Math.round(observedValue * 1e4) / 1e4,
-    threshold: policy.triggerThreshold
-  };
-};
-var getActivePolicies = (runtime2) => {
+var STATUS_UNVERIFIED = 0;
+var getUnverifiedPolicies = (runtime2) => {
   const evmConfig = runtime2.config.evms[0];
   const network248 = getNetwork({
     chainFamily: "evm",
@@ -16505,7 +16377,7 @@ var getActivePolicies = (runtime2) => {
     isTestnet: true
   });
   if (!network248) {
-    throw new Error(`Network not found for chain selector name: ${evmConfig.chainSelectorName}`);
+    throw new Error(`Network not found: ${evmConfig.chainSelectorName}`);
   }
   const evmClient = new ClientCapability(network248.chainSelector.selector);
   const nextIdCallData = encodeFunctionData({
@@ -16540,7 +16412,6 @@ var getActivePolicies = (runtime2) => {
     runtime2.log(`Scanning policy IDs ${scanStart}..${scanEnd - 1} ` + `(window ${windowIndex + 1}/${numWindows}, ${maxPolicyScan} max per cycle)`);
   }
   const policies = [];
-  const currentTime = Math.floor(Date.now() / 1000);
   for (let id = scanStart;id < scanEnd; id++) {
     try {
       const statusCallData = encodeFunctionData({
@@ -16561,8 +16432,8 @@ var getActivePolicies = (runtime2) => {
         functionName: "policyStatus",
         data: bytesToHex(statusResponse.data)
       });
-      if (Number(status) !== 1) {
-        runtime2.log(`Policy ${id}: status=${status}, skipping (not verified)`);
+      if (Number(status) !== STATUS_UNVERIFIED) {
+        runtime2.log(`Policy ${id}: status=${status}, skipping (not unverified)`);
         continue;
       }
       const policyCallData = encodeFunctionData({
@@ -16583,35 +16454,64 @@ var getActivePolicies = (runtime2) => {
         functionName: "policies",
         data: bytesToHex(policyResponse.data)
       });
-      const [hazard, start, end, lat, lon, maxCoverage, premium, triggerThreshold, paid] = policyData;
-      if (!paid && Number(end) > currentTime) {
-        const hazardNum = Number(hazard);
-        const hazardName = HAZARD_ID_TO_NAME[hazardNum];
-        if (!hazardName) {
-          runtime2.log(`Policy ${id}: Unknown hazard type ${hazardNum} - skipping`);
-          continue;
-        }
-        policies.push({
-          id,
-          hazard: hazardNum,
-          hazardName,
-          start: Number(start),
-          end: Number(end),
-          lat: Number(lat) / 1e4,
-          lon: Number(lon) / 1e4,
-          maxCoverage,
-          premium,
-          triggerThreshold: Number(triggerThreshold),
-          paid
-        });
+      const [hazard, start, end, lat, lon, maxCoverage, premium, triggerThreshold] = policyData;
+      const hazardNum = Number(hazard);
+      const hazardName = HAZARD_ID_TO_NAME[hazardNum];
+      if (!hazardName) {
+        runtime2.log(`Policy ${id}: unknown hazard ${hazardNum}, skipping`);
+        continue;
       }
+      policies.push({
+        id,
+        hazard: hazardNum,
+        hazardName,
+        lat: Number(lat) / 1e4,
+        lon: Number(lon) / 1e4,
+        maxCoverage,
+        premium,
+        triggerThreshold: Number(triggerThreshold),
+        start: Number(start),
+        end: Number(end)
+      });
     } catch (error) {
       runtime2.log(`Error fetching policy ${id}: ${error}`);
     }
   }
   return policies;
 };
-var triggerPayout = (runtime2, policyId, observedValue, payoutAmount) => {
+var policyGroupKey = (p) => `${p.lat},${p.lon},${p.hazardName}`;
+var createPremiumFetcher = (representative) => (sendRequester, config) => {
+  const durationSeconds = representative.end - representative.start;
+  const nMonths = Math.max(1, Math.round(durationSeconds / (30 * 24 * 3600)));
+  const payoutUsdc = Number(representative.maxCoverage) / 1e6;
+  const body = JSON.stringify({
+    lat: representative.lat,
+    lon: representative.lon,
+    hazard: representative.hazardName,
+    threshold: representative.triggerThreshold,
+    n_months: nMonths,
+    payout: payoutUsdc,
+    loading_factor: config.minLoadingFactor
+  });
+  const response = sendRequester.sendRequest({
+    method: "POST",
+    url: `${config.apiUrl}/premium`,
+    headers: { "Content-Type": "application/json" },
+    body: new TextEncoder().encode(body)
+  }).result();
+  if (response.statusCode !== 200) {
+    throw new Error(`Premium API returned status ${response.statusCode}`);
+  }
+  const responseText = Buffer.from(response.body).toString("utf-8");
+  const data = JSON.parse(responseText);
+  if (!data.premium_usdc && data.premium_usdc !== 0) {
+    throw new Error("Premium API response missing premium_usdc");
+  }
+  return {
+    premiumUsdc: data.premium_usdc
+  };
+};
+var submitVerification = (runtime2, policyId, action) => {
   const evmConfig = runtime2.config.evms[0];
   const network248 = getNetwork({
     chainFamily: "evm",
@@ -16619,14 +16519,14 @@ var triggerPayout = (runtime2, policyId, observedValue, payoutAmount) => {
     isTestnet: true
   });
   if (!network248) {
-    throw new Error(`Network not found for chain selector name: ${evmConfig.chainSelectorName}`);
+    throw new Error(`Network not found: ${evmConfig.chainSelectorName}`);
   }
   const evmClient = new ClientCapability(network248.chainSelector.selector);
-  runtime2.log(`Triggering payout for policy ${policyId}: observedValue=${observedValue}, payout=${payoutAmount.toString()}`);
+  runtime2.log(`Submitting ${action} for policy ${policyId}`);
   const callData = encodeFunctionData({
     abi: PolicyManager,
-    functionName: "triggerPayout",
-    args: [BigInt(policyId), BigInt(observedValue), payoutAmount]
+    functionName: action,
+    args: [BigInt(policyId)]
   });
   const reportResponse = runtime2.report({
     encodedPayload: hexToBase64(callData),
@@ -16641,24 +16541,22 @@ var triggerPayout = (runtime2, policyId, observedValue, payoutAmount) => {
       gasLimit: evmConfig.gasLimit
     }
   }).result();
-  const txStatus = resp.txStatus;
-  if (txStatus !== TxStatus.SUCCESS) {
-    throw new Error(`Failed to trigger payout: ${resp.errorMessage || txStatus}`);
+  if (resp.txStatus !== TxStatus.SUCCESS) {
+    throw new Error(`Failed to ${action}: ${resp.errorMessage || resp.txStatus}`);
   }
   const txHash = resp.txHash || new Uint8Array(32);
-  runtime2.log(`Payout triggered successfully at txHash: ${bytesToHex(txHash)}`);
+  runtime2.log(`${action} succeeded at txHash: ${bytesToHex(txHash)}`);
   return bytesToHex(txHash);
 };
-var policyGroupKey = (p) => `${p.lat},${p.lon},${p.hazardName}`;
-var checkPoliciesAndTriggerPayouts = (runtime2) => {
-  runtime2.log("Starting policy check...");
-  const activePolicies = getActivePolicies(runtime2);
-  runtime2.log(`Found ${activePolicies.length} active policies`);
-  if (activePolicies.length === 0) {
-    return "No active policies to check";
+var verifyPolicies = (runtime2) => {
+  runtime2.log("Starting underwriter verification...");
+  const unverifiedPolicies = getUnverifiedPolicies(runtime2);
+  runtime2.log(`Found ${unverifiedPolicies.length} unverified policies`);
+  if (unverifiedPolicies.length === 0) {
+    return "No unverified policies to check";
   }
   const groups = new Map;
-  for (const policy of activePolicies) {
+  for (const policy of unverifiedPolicies) {
     const key = policyGroupKey(policy);
     const arr = groups.get(key);
     if (arr) {
@@ -16678,8 +16576,8 @@ var checkPoliciesAndTriggerPayouts = (runtime2) => {
     offset = cycleIndex % numWindows * MAX_HTTP_CALLS;
   }
   const httpCapability = new ClientCapability2;
-  let triggeredCount = 0;
-  let checkedCount = 0;
+  let verifiedCount = 0;
+  let rejectedCount = 0;
   const groupsToProcess = groupKeys.slice(offset, offset + MAX_HTTP_CALLS);
   if (groupsToProcess.length < MAX_HTTP_CALLS && offset > 0) {
     const remaining = MAX_HTTP_CALLS - groupsToProcess.length;
@@ -16690,35 +16588,39 @@ var checkPoliciesAndTriggerPayouts = (runtime2) => {
     const policiesInGroup = groups.get(groupKey);
     const representative = policiesInGroup[0];
     try {
-      runtime2.log(`Fetching weather for group ${groupKey} ` + `(${policiesInGroup.length} policies, hazard=${representative.hazardName})`);
-      const result = httpCapability.sendRequest(runtime2, createWeatherFetcher(representative), ConsensusAggregationByFields({
-        triggered: median,
-        value: median,
-        threshold: median
+      runtime2.log(`Fetching premium for group ${groupKey} ` + `(${policiesInGroup.length} policies, hazard=${representative.hazardName})`);
+      const result = httpCapability.sendRequest(runtime2, createPremiumFetcher(representative), ConsensusAggregationByFields({
+        premiumUsdc: median
       }))(runtime2.config).result();
+      const minimumPremiumRaw = BigInt(Math.floor(result.premiumUsdc * 1e6));
+      runtime2.log(`Group ${groupKey}: API minimum premium = ${result.premiumUsdc} USDC (${minimumPremiumRaw} raw)`);
       for (const policy of policiesInGroup) {
-        checkedCount++;
-        const isTriggered = evaluateTrigger(result.value, policy.triggerThreshold, policy.hazardName);
-        runtime2.log(`Policy ${policy.id}: triggered=${isTriggered}, ` + `value=${result.value}, threshold=${policy.triggerThreshold}`);
-        if (isTriggered) {
-          runtime2.log(`Policy ${policy.id} TRIGGERED! Observed ${result.value} ` + `(threshold: ${policy.triggerThreshold}). Initiating payout...`);
-          const observedValueInt = Math.round(result.value);
-          triggerPayout(runtime2, policy.id, observedValueInt, policy.maxCoverage);
-          triggeredCount++;
+        let adjustedMinimum = minimumPremiumRaw;
+        if (policy.maxCoverage !== representative.maxCoverage) {
+          adjustedMinimum = minimumPremiumRaw * policy.maxCoverage / representative.maxCoverage;
+        }
+        runtime2.log(`Policy ${policy.id}: onChainPremium=${policy.premium.toString()}, ` + `minimumRequired=${adjustedMinimum.toString()}`);
+        if (policy.premium >= adjustedMinimum) {
+          submitVerification(runtime2, policy.id, "verifyPolicy");
+          verifiedCount++;
+        } else {
+          runtime2.log(`Policy ${policy.id} REJECTED: premium ${policy.premium.toString()} < ` + `minimum ${adjustedMinimum.toString()}`);
+          submitVerification(runtime2, policy.id, "rejectPolicy");
+          rejectedCount++;
         }
       }
     } catch (error) {
       runtime2.log(`Error processing group ${groupKey}: ${error}`);
     }
   }
-  return `Checked ${checkedCount}/${activePolicies.length} policies ` + `(${groupsToProcess.length} HTTP calls), triggered ${triggeredCount} payouts`;
+  return `Verified ${verifiedCount}, rejected ${rejectedCount} ` + `out of ${unverifiedPolicies.length} unverified policies ` + `(${groupsToProcess.length} HTTP calls)`;
 };
 var onCronTrigger = (runtime2, payload) => {
   if (!payload.scheduledExecutionTime) {
     throw new Error("Scheduled execution time is required");
   }
-  runtime2.log("Running CronTrigger for policy monitoring");
-  return checkPoliciesAndTriggerPayouts(runtime2);
+  runtime2.log("Running CronTrigger for underwriter verification");
+  return verifyPolicies(runtime2);
 };
 var onLogTrigger = (runtime2, payload) => {
   runtime2.log("Running LogTrigger - New policy purchased");
@@ -16729,7 +16631,7 @@ var onLogTrigger = (runtime2, payload) => {
   }
   const policyId = BigInt(bytesToHex(topics[1]));
   runtime2.log(`New policy purchased with ID: ${policyId.toString()}`);
-  return `Policy ${policyId.toString()} registered, will be monitored by cron job`;
+  return `Policy ${policyId.toString()} registered, will be verified by cron job`;
 };
 var initWorkflow = (config) => {
   const cronTrigger = new CronCapability;

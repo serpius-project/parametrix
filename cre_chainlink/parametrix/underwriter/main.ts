@@ -284,7 +284,7 @@ const createPremiumFetcher = (representative: UnverifiedPolicy) =>
 			method: 'POST',
 			url: `${config.apiUrl}/premium`,
 			headers: { 'Content-Type': 'application/json' },
-			body: new TextEncoder().encode(body),
+			body: new TextEncoder().encode(body) as unknown as string,
 		}).result()
 
 		if (response.statusCode !== 200) {
