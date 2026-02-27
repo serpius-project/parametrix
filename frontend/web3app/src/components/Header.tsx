@@ -18,7 +18,7 @@ export default function Header() {
         </button>
         <NavLink to="/" className="header-logo">
           <img src="/logo.png" alt="prmtrix" className="header-logo-img" />
-          PRMTRIX
+          prm&middot;trix
         </NavLink>
         <nav className={`header-nav${menuOpen ? ' open' : ''}`}>
           <NavLink
