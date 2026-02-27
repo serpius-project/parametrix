@@ -202,25 +202,6 @@ contract PolicyManagerTest is Test {
         assertApproxEqAbs(uwInc + jrInc + srInc, premium, 3, "Total deposits == premium");
     }
 
-    function test_BuyMultiplePolicies() public {
-        policyManager.PolicyInput[] memory inputs = new policyManager.PolicyInput[](2);
-        inputs[0] = policyManager.PolicyInput(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, DEFAULT_LAT, DEFAULT_LON);
-        inputs[1] = policyManager.PolicyInput(1, 60, 20_000 * 10**18, 2000 * 10**18, 100, DEFAULT_LAT, DEFAULT_LON);
-
-        vm.startPrank(alice);
-        asset.approve(address(manager), 3000 * 10**18);
-        uint256[] memory policyIds = manager.buyPolicies(inputs, alice);
-        vm.stopPrank();
-
-        assertEq(policyIds.length, 2);
-        assertEq(manager.balanceOf(alice, policyIds[0]), 1);
-        assertEq(manager.balanceOf(alice, policyIds[1]), 1);
-
-        (uint256 uw1, uint256 jr1, uint256 sr1) = manager.vaultReservedShares(policyIds[0]);
-        (uint256 uw2, uint256 jr2, uint256 sr2) = manager.vaultReservedShares(policyIds[1]);
-        assertGt(uw1 + jr1 + sr1 + uw2 + jr2 + sr2, 0, "Shares reserved across vaults");
-    }
-
     function test_BuyPolicyDepositsPremiumToVaults() public {
         uint256 uwBal = uwVault.balanceOf(address(manager));
         uint256 jrBal = juniorVault.balanceOf(address(manager));
@@ -246,6 +227,7 @@ contract PolicyManagerTest is Test {
         vm.stopPrank();
 
         uint256 before = asset.balanceOf(alice);
+        manager.verifyPolicy(pid);
         manager.triggerPayout(pid, 40, 5000 * 10**18);
         assertEq(asset.balanceOf(alice) - before, 5000 * 10**18, "Full payout");
 
@@ -266,6 +248,7 @@ contract PolicyManagerTest is Test {
         uint256 srBefore = seniorVault.totalAssets();
         (uint256 uwRes, , ) = manager.vaultReservedShares(pid);
 
+        manager.verifyPolicy(pid);
         manager.triggerPayout(pid, 40, 5000 * 10**18);
 
         uint256 uwDec = uwBefore - uwVault.totalAssets();
@@ -319,6 +302,9 @@ contract PolicyManagerTest is Test {
         uint256 pB = fm.buyPolicy(0, 30, cov2, pre2, 35, bob, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
+        fm.verifyPolicy(pA);
+        fm.verifyPolicy(pB);
+
         uint256 aliceBefore = asset.balanceOf(alice);
         fm.triggerPayout(pA, 40, cov1);
         uint256 alicePayout = asset.balanceOf(alice) - aliceBefore;
@@ -352,6 +338,7 @@ contract PolicyManagerTest is Test {
         asset.approve(address(manager), 1000 * 10**18);
         uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
+        manager.verifyPolicy(pid);
         manager.triggerPayout(pid, 40, 5000 * 10**18);
         vm.expectRevert(bytes("paid"));
         manager.triggerPayout(pid, 40, 5000 * 10**18);
@@ -362,6 +349,7 @@ contract PolicyManagerTest is Test {
         asset.approve(address(manager), 1000 * 10**18);
         uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
+        manager.verifyPolicy(pid);
         vm.warp(block.timestamp + 31 days);
         vm.expectRevert(bytes("expired"));
         manager.triggerPayout(pid, 40, 5000 * 10**18);
@@ -372,6 +360,7 @@ contract PolicyManagerTest is Test {
         asset.approve(address(manager), 1000 * 10**18);
         uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
+        manager.verifyPolicy(pid);
         vm.expectRevert(bytes("no trigger"));
         manager.triggerPayout(pid, 34, 5000 * 10**18);
     }
@@ -381,6 +370,7 @@ contract PolicyManagerTest is Test {
         asset.approve(address(manager), 1000 * 10**18);
         uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
+        manager.verifyPolicy(pid);
         vm.expectRevert(bytes("too much"));
         manager.triggerPayout(pid, 40, 11_000 * 10**18);
     }
@@ -398,6 +388,7 @@ contract PolicyManagerTest is Test {
         asset.approve(address(manager), 1000 * 10**18);
         uint256 pid = manager.buyPolicy(2, 30, 10_000 * 10**18, 1000 * 10**18, int256(-50), alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
+        manager.verifyPolicy(pid);
         uint256 before = asset.balanceOf(alice);
         manager.triggerPayout(pid, int256(-80), 5000 * 10**18);
         assertEq(asset.balanceOf(alice) - before, 5000 * 10**18);
@@ -410,6 +401,7 @@ contract PolicyManagerTest is Test {
         asset.approve(address(manager), 1000 * 10**18);
         uint256 pid = manager.buyPolicy(2, 30, 10_000 * 10**18, 1000 * 10**18, int256(-50), alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
+        manager.verifyPolicy(pid);
         vm.expectRevert(bytes("no trigger"));
         manager.triggerPayout(pid, int256(-30), 5000 * 10**18);
     }
@@ -419,6 +411,7 @@ contract PolicyManagerTest is Test {
         asset.approve(address(manager), 1000 * 10**18);
         uint256 pid = manager.buyPolicy(2, 30, 10_000 * 10**18, 1000 * 10**18, int256(-50), alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
+        manager.verifyPolicy(pid);
         manager.triggerPayout(pid, int256(-50), 5000 * 10**18);
         (, , , , , , , , bool paid) = manager.policies(pid);
         assertTrue(paid);
@@ -486,6 +479,7 @@ contract PolicyManagerTest is Test {
         manager.safeTransferFrom(alice, bob, pid, 1, "");
         vm.stopPrank();
         uint256 before = asset.balanceOf(bob);
+        manager.verifyPolicy(pid);
         manager.triggerPayout(pid, 40, 5000 * 10**18);
         assertEq(asset.balanceOf(bob) - before, 5000 * 10**18);
     }
@@ -545,6 +539,7 @@ contract PolicyManagerTest is Test {
         uint256 pid = manager.buyPolicy(0, 30, maxCoverage, premium, 35, alice, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
         uint256 before = asset.balanceOf(alice);
+        manager.verifyPolicy(pid);
         manager.triggerPayout(pid, 40, requestedPayout);
         uint256 actual = asset.balanceOf(alice) - before;
         assertGt(actual, 0);
@@ -584,6 +579,9 @@ contract PolicyManagerTest is Test {
         uint256 p2 = manager.buyPolicy(0, 30, cov2, pre2, 35, bob, DEFAULT_LAT, DEFAULT_LON);
         vm.stopPrank();
 
+        manager.verifyPolicy(p1);
+        manager.verifyPolicy(p2);
+
         uint256 aBefore = asset.balanceOf(alice);
         manager.triggerPayout(p1, 40, cov1);
         assertApproxEqRel(asset.balanceOf(alice) - aBefore, cov1, 0.001e18);
@@ -610,6 +608,7 @@ contract PolicyManagerTest is Test {
         vm.stopPrank();
         assertEq(manager.totalActiveCoverage(), cov1 + cov2);
 
+        manager.verifyPolicy(p1);
         manager.triggerPayout(p1, 40, cov1);
         assertEq(manager.totalActiveCoverage(), cov2);
 
@@ -647,6 +646,10 @@ contract PolicyManagerTest is Test {
             asset.approve(address(fm), premium);
             pids[i] = fm.buyPolicy(0, 30, coverages[i], premium, 35, users[i], DEFAULT_LAT, DEFAULT_LON);
             vm.stopPrank();
+        }
+
+        for (uint8 i = 0; i < numUsers; i++) {
+            fm.verifyPolicy(pids[i]);
         }
 
         uint256 totalPaid;
@@ -695,6 +698,7 @@ contract PolicyManagerTest is Test {
         vm.stopPrank();
         assertEq(manager.activeCoverageByHazard(0), cov);
 
+        manager.verifyPolicy(pid);
         manager.triggerPayout(pid, 40, cov);
         assertEq(manager.activeCoverageByHazard(0), 0, "heatwave coverage cleared");
     }
@@ -712,6 +716,117 @@ contract PolicyManagerTest is Test {
         vm.warp(block.timestamp + 31 days);
         manager.releaseExpiredPolicy(pid);
         assertEq(manager.activeCoverageByHazard(1), 0, "flood coverage cleared on expiry");
+    }
+
+    /* ============ Policy Verification ============ */
+
+    function test_PolicyCreatedAsUnverified() public {
+        vm.startPrank(alice);
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+        assertEq(uint8(manager.policyStatus(pid)), 0, "new policy should be Unverified");
+    }
+
+    function test_VerifyPolicy() public {
+        vm.startPrank(alice);
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+
+        vm.expectEmit(true, false, false, false);
+        emit policyManager.PolicyVerified(pid);
+        manager.verifyPolicy(pid);
+        assertEq(uint8(manager.policyStatus(pid)), 1, "should be Verified");
+    }
+
+    function test_VerifyPolicyRevertsIfNotOracle() public {
+        vm.startPrank(alice);
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+
+        vm.prank(alice);
+        vm.expectRevert(bytes("not oracle"));
+        manager.verifyPolicy(pid);
+    }
+
+    function test_RejectPolicy() public {
+        vm.startPrank(alice);
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+
+        uint256 covBefore = manager.totalActiveCoverage();
+        (uint256 uBefore, uint256 jBefore, uint256 sBefore) = manager.vaultReservedShares(pid);
+        assertGt(uBefore + jBefore + sBefore, 0, "shares should be reserved");
+
+        vm.expectEmit(true, false, false, false);
+        emit policyManager.PolicyRejected(pid);
+        manager.rejectPolicy(pid);
+
+        assertEq(uint8(manager.policyStatus(pid)), 2, "should be Invalid");
+        (uint256 uAfter, uint256 jAfter, uint256 sAfter) = manager.vaultReservedShares(pid);
+        assertEq(uAfter + jAfter + sAfter, 0, "shares should be unreserved");
+        assertEq(manager.totalActiveCoverage(), covBefore - 10_000 * 10**18, "coverage decremented");
+        assertEq(manager.activeCoverageByHazard(0), covBefore - 10_000 * 10**18, "hazard coverage decremented");
+    }
+
+    function test_RejectPolicyKeepsPremium() public {
+        uint256 uwBefore = uwVault.totalAssets();
+        uint256 jrBefore = juniorVault.totalAssets();
+        uint256 srBefore = seniorVault.totalAssets();
+
+        vm.startPrank(alice);
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+
+        uint256 uwAfterBuy = uwVault.totalAssets();
+        uint256 jrAfterBuy = juniorVault.totalAssets();
+        uint256 srAfterBuy = seniorVault.totalAssets();
+        assertGt(uwAfterBuy + jrAfterBuy + srAfterBuy, uwBefore + jrBefore + srBefore, "premium deposited");
+
+        manager.rejectPolicy(pid);
+
+        assertEq(uwVault.totalAssets(), uwAfterBuy, "UW assets unchanged after reject");
+        assertEq(juniorVault.totalAssets(), jrAfterBuy, "JR assets unchanged after reject");
+        assertEq(seniorVault.totalAssets(), srAfterBuy, "SR assets unchanged after reject");
+    }
+
+    function test_TriggerPayoutRevertsIfUnverified() public {
+        vm.startPrank(alice);
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+
+        vm.expectRevert(bytes("not verified"));
+        manager.triggerPayout(pid, 40, 5000 * 10**18);
+    }
+
+    function test_TriggerPayoutRevertsIfInvalid() public {
+        vm.startPrank(alice);
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+
+        manager.rejectPolicy(pid);
+
+        vm.expectRevert(bytes("not verified"));
+        manager.triggerPayout(pid, 40, 5000 * 10**18);
+    }
+
+    function test_TriggerPayoutWorksIfVerified() public {
+        vm.startPrank(alice);
+        asset.approve(address(manager), 1000 * 10**18);
+        uint256 pid = manager.buyPolicy(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, alice, DEFAULT_LAT, DEFAULT_LON);
+        vm.stopPrank();
+
+        manager.verifyPolicy(pid);
+
+        uint256 before = asset.balanceOf(alice);
+        manager.triggerPayout(pid, 40, 5000 * 10**18);
+        assertGt(asset.balanceOf(alice) - before, 0, "payout received");
     }
 
     /* ============ Dynamic Caps (syncVaultCaps) ============ */
@@ -768,22 +883,4 @@ contract PolicyManagerTest is Test {
         assertEq(seniorVault.cap(), expectedSr, "senior cap synced on buy");
     }
 
-    function test_BuyPoliciesBatchAutoSyncsVaultCaps() public {
-        feeModel.setJuniorCap(3_000_000 * 10**18);
-        uint256 expectedSr = feeModel.seniorCap();
-
-        assertEq(juniorVault.cap(), VAULT_CAP);
-
-        policyManager.PolicyInput[] memory inputs = new policyManager.PolicyInput[](2);
-        inputs[0] = policyManager.PolicyInput(0, 30, 10_000 * 10**18, 1000 * 10**18, 35, DEFAULT_LAT, DEFAULT_LON);
-        inputs[1] = policyManager.PolicyInput(1, 60, 20_000 * 10**18, 2000 * 10**18, 100, DEFAULT_LAT, DEFAULT_LON);
-
-        vm.startPrank(alice);
-        asset.approve(address(manager), 3000 * 10**18);
-        manager.buyPolicies(inputs, alice);
-        vm.stopPrank();
-
-        assertEq(juniorVault.cap(), 3_000_000 * 10**18, "junior cap synced on batch buy");
-        assertEq(seniorVault.cap(), expectedSr, "senior cap synced on batch buy");
-    }
 }

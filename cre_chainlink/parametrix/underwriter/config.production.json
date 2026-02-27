@@ -1,0 +1,12 @@
+{
+  "schedule": "*/2 * * * *",
+  "minLoadingFactor": 0.10,
+  "evms": [
+    {
+      "policyManagerAddress": "0x0000000000000000000000000000000000000000",
+      "chainSelectorName": "ethereum-testnet-sepolia",
+      "gasLimit": "500000"
+    }
+  ],
+  "apiUrl": "https://api.parametrix.io"
+}

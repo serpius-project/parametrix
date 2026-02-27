@@ -59,6 +59,9 @@ contract policyManager is ERC1155, Ownable {
         uint256 sharesReleased
     );
 
+    event PolicyVerified(uint256 indexed policyId);
+    event PolicyRejected(uint256 indexed policyId);
+
     // ── Data structures ──────────────────────────────────────────────────────
     struct Policy {
         uint8 hazard;
@@ -70,16 +73,6 @@ contract policyManager is ERC1155, Ownable {
         uint256 premium;
         int256 triggerThreshold;
         bool paid;
-    }
-
-    struct PolicyInput {
-        uint8 hazard;
-        uint256 durationDays;
-        uint256 maxCoverage;
-        uint256 premium;
-        int256 triggerThreshold;
-        int32 lat;
-        int32 lon;
     }
 
     struct VaultReservations {
@@ -95,6 +88,10 @@ contract policyManager is ERC1155, Ownable {
     uint256 public totalActiveCoverage;
     mapping(uint8 => uint256) public activeCoverageByHazard;
     address public oracle;
+
+    // ── Policy verification ───────────────────────────────────────────────
+    enum PolicyStatus { Unverified, Verified, Invalid }
+    mapping(uint256 => PolicyStatus) public policyStatus;
 
     // ── Constructor ──────────────────────────────────────────────────────────
     constructor(
@@ -169,6 +166,28 @@ contract policyManager is ERC1155, Ownable {
         require(validHazards[hazardId], "hazard doesn't exist");
         validHazards[hazardId] = false;
         emit HazardRemoved(hazardId);
+    }
+
+    // ── Policy verification (oracle-only) ──────────────────────────────────
+
+    function verifyPolicy(uint256 id) external {
+        require(msg.sender == oracle, "not oracle");
+        require(policyStatus[id] == PolicyStatus.Unverified, "not unverified");
+        policyStatus[id] = PolicyStatus.Verified;
+        emit PolicyVerified(id);
+    }
+
+    function rejectPolicy(uint256 id) external {
+        require(msg.sender == oracle, "not oracle");
+        require(policyStatus[id] == PolicyStatus.Unverified, "not unverified");
+        policyStatus[id] = PolicyStatus.Invalid;
+
+        // Unreserve shares (premium stays in vaults as penalty)
+        _unreserveAll(id);
+        totalActiveCoverage -= policies[id].maxCoverage;
+        activeCoverageByHazard[policies[id].hazard] -= policies[id].maxCoverage;
+
+        emit PolicyRejected(id);
     }
 
     // ── Helpers (internal) ───────────────────────────────────────────────────
@@ -313,87 +332,11 @@ contract policyManager is ERC1155, Ownable {
         );
     }
 
-    function buyPolicies(PolicyInput[] calldata inputs, address receiver)
-        external
-        returns (uint256[] memory ids)
-    {
-        _syncVaultCaps();
-        uint256 n = inputs.length;
-        require(n != 0, "empty");
-        ids = new uint256[](n);
-
-        // Single transfer of total premium
-        uint256 totalPremium;
-        for (uint256 i; i < n; ++i) totalPremium += inputs[i].premium;
-        asset.transferFrom(msg.sender, address(this), totalPremium);
-
-        // Split and deposit total premium to three vaults
-        // (uses aggregate capital ratios for the split)
-        IFeeRateModel.FeeAllocation memory alloc = feeRateModel.getFeeSplit(
-            totalPremium,
-            juniorVault.totalAssets(),
-            seniorVault.totalAssets(),
-            underwriterVault.totalAssets()
-        );
-
-        uint256 juniorTotal = (totalPremium * alloc.juniorBps) / 10000;
-        uint256 seniorTotal = (totalPremium * alloc.seniorBps) / 10000;
-        uint256 uwTotal = totalPremium - juniorTotal - seniorTotal;
-
-        if (juniorTotal > 0) {
-            asset.approve(address(juniorVault), juniorTotal);
-            juniorVault.deposit(juniorTotal, address(this));
-        }
-        if (seniorTotal > 0) {
-            asset.approve(address(seniorVault), seniorTotal);
-            seniorVault.deposit(seniorTotal, address(this));
-        }
-        if (uwTotal > 0) {
-            asset.approve(address(underwriterVault), uwTotal);
-            underwriterVault.deposit(uwTotal, address(this));
-        }
-
-        // Create individual policies and reserve shares
-        for (uint256 i; i < n; ++i) {
-            PolicyInput calldata in_ = inputs[i];
-            require(validHazards[in_.hazard], "invalid hazard type");
-
-            uint256 id = nextId++;
-            ids[i] = id;
-
-            policies[id] = Policy({
-                hazard: in_.hazard,
-                start: uint40(block.timestamp),
-                end: uint40(block.timestamp + in_.durationDays * 1 days),
-                lat: in_.lat,
-                lon: in_.lon,
-                maxCoverage: in_.maxCoverage,
-                premium: in_.premium,
-                triggerThreshold: in_.triggerThreshold,
-                paid: false
-            });
-
-            _reserveShares(in_.maxCoverage, id);
-            totalActiveCoverage += in_.maxCoverage;
-            activeCoverageByHazard[in_.hazard] += in_.maxCoverage;
-
-            _mint(receiver, id, 1, "");
-
-            emit PolicyPurchased(
-                id, receiver, in_.hazard,
-                block.timestamp, block.timestamp + in_.durationDays * 1 days,
-                in_.maxCoverage, in_.triggerThreshold, in_.lat, in_.lon
-            );
-        }
-
-        // Emit aggregate distribution (use id=0 for batch)
-        emit PremiumDistributed(0, juniorTotal, seniorTotal, uwTotal);
-    }
-
     // ── Payout ───────────────────────────────────────────────────────────────
 
     function triggerPayout(uint256 id, int256 observedValue, uint256 payout) external {
         require(msg.sender == oracle, "not oracle");
+        require(policyStatus[id] == PolicyStatus.Verified, "not verified");
 
         Policy storage p = policies[id];
         require(!p.paid, "paid");

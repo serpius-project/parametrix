@@ -22,6 +22,7 @@ export interface ProtocolHealthData {
   totalReservedShares: bigint
   totalSupply: bigint
   totalActiveCoverage: bigint
+  pendingCoverage: bigint
   underwriter: VaultMetrics
   junior: VaultMetrics
   senior: VaultMetrics
@@ -61,7 +62,7 @@ export function useProtocolHealth() {
     setError(null)
 
     try {
-      const [underwriter, junior, senior, totalActiveCoverage] = await Promise.all([
+      const [underwriter, junior, senior, totalActiveCoverage, nextId] = await Promise.all([
         readVaultMetrics(publicClient, UNDERWRITER_VAULT_ADDRESS),
         readVaultMetrics(publicClient, JUNIOR_VAULT_ADDRESS),
         readVaultMetrics(publicClient, SENIOR_VAULT_ADDRESS),
@@ -70,7 +71,36 @@ export function useProtocolHealth() {
           abi: PolicyManagerAbi,
           functionName: 'totalActiveCoverage',
         }),
+        publicClient.readContract({
+          address: POLICY_MANAGER_ADDRESS,
+          abi: PolicyManagerAbi,
+          functionName: 'nextId',
+        }),
       ])
+
+      // Compute pending (unverified) coverage by iterating all policies
+      const nowSec = Math.floor(Date.now() / 1000)
+      let pendingCoverage = 0n
+      for (let id = 1n; id < (nextId as bigint); id++) {
+        const status = await publicClient.readContract({
+          address: POLICY_MANAGER_ADDRESS,
+          abi: PolicyManagerAbi,
+          functionName: 'policyStatus',
+          args: [id],
+        })
+        if (Number(status) !== 0) continue // only Unverified
+
+        const data = await publicClient.readContract({
+          address: POLICY_MANAGER_ADDRESS,
+          abi: PolicyManagerAbi,
+          functionName: 'policies',
+          args: [id],
+        })
+        const [, , end, , , maxCoverage, , , paid] = data as [number, number, number, number, number, bigint, bigint, bigint, boolean]
+        if (!paid && Number(end) > nowSec) {
+          pendingCoverage += maxCoverage
+        }
+      }
 
       const totalAssets = underwriter.totalAssets + junior.totalAssets + senior.totalAssets
       const cap = underwriter.cap + junior.cap + senior.cap
@@ -83,6 +113,7 @@ export function useProtocolHealth() {
         totalReservedShares,
         totalSupply,
         totalActiveCoverage: totalActiveCoverage as bigint,
+        pendingCoverage,
         underwriter,
         junior,
         senior,

@@ -58,6 +58,7 @@ export interface PolicyOnChain {
   premium: bigint
   triggerThreshold: bigint
   paid: boolean
+  status: number // 0 = Unverified, 1 = Verified, 2 = Invalid
   holder: `0x${string}`
 }
 

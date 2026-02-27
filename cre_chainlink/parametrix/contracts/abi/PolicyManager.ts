@@ -54,6 +54,19 @@ export const PolicyManager = [
 		name: 'PolicyExpiredReleased',
 		type: 'event',
 	},
+	// Policy Verification Events
+	{
+		anonymous: false,
+		inputs: [{ indexed: true, internalType: 'uint256', name: 'policyId', type: 'uint256' }],
+		name: 'PolicyVerified',
+		type: 'event',
+	},
+	{
+		anonymous: false,
+		inputs: [{ indexed: true, internalType: 'uint256', name: 'policyId', type: 'uint256' }],
+		name: 'PolicyRejected',
+		type: 'event',
+	},
 	// View Functions - Hazard Registry
 	{
 		inputs: [{ internalType: 'uint8', name: '', type: 'uint8' }],
@@ -113,6 +126,29 @@ export const PolicyManager = [
 		name: 'nextId',
 		outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
 		stateMutability: 'view',
+		type: 'function',
+	},
+	// View Functions - Policy Verification Status
+	{
+		inputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
+		name: 'policyStatus',
+		outputs: [{ internalType: 'uint8', name: '', type: 'uint8' }],
+		stateMutability: 'view',
+		type: 'function',
+	},
+	// State-Changing Functions - Policy Verification
+	{
+		inputs: [{ internalType: 'uint256', name: 'id', type: 'uint256' }],
+		name: 'verifyPolicy',
+		outputs: [],
+		stateMutability: 'nonpayable',
+		type: 'function',
+	},
+	{
+		inputs: [{ internalType: 'uint256', name: 'id', type: 'uint256' }],
+		name: 'rejectPolicy',
+		outputs: [],
+		stateMutability: 'nonpayable',
 		type: 'function',
 	},
 	// State-Changing Functions - Hazard Management

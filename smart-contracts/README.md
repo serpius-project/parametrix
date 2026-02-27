@@ -29,7 +29,7 @@ Policyholder Premium
 
 | Contract | Description |
 |---|---|
-| `src/policyManager.sol` | Issues policies (ERC-1155 NFTs), collects premiums, splits across 3 vaults, triggers payouts via waterfall, tracks per-hazard active coverage, auto-recomputes and syncs vault caps on every purchase |
+| `src/policyManager.sol` | Issues policies (ERC-1155 NFTs), collects premiums, splits across 3 vaults, on-chain policy verification (Unverified/Verified/Invalid), triggers payouts via waterfall (verified policies only), tracks per-hazard active coverage, auto-recomputes and syncs vault caps on every purchase |
 | `src/underwriterVault.sol` | ERC-4626 vault with share reservation, Aave yield integration, pausable deposits, configurable fees, lockup periods, capManager support |
 | `src/FeeRateModel.sol` | Computes premium split (Underwriter/Junior/Senior) based on capital ratios and u'_target. Auto-links Junior/Senior caps. Supports `recomputeCaps()` for auto-recomputation |
 | `src/IUnderwriterVault.sol` | Interface for vault interactions |
@@ -68,9 +68,17 @@ Policyholder Premium
 - Manual `rebalance()` for owner/keeper
 - Kill switch via `aaveEnabled` flag
 
+### Policy Verification (Underwriter)
+- Every policy is created as `Unverified` (default status)
+- A CRE underwriter workflow validates the premium against the Python API and calls `verifyPolicy(id)` or `rejectPolicy(id)` on-chain
+- **PolicyStatus enum**: `Unverified` (0) → `Verified` (1) or `Invalid` (2)
+- `triggerPayout()` enforces `status == Verified` — unverified and rejected policies cannot receive payouts
+- `rejectPolicy()` unreserves shares and decrements coverage, but premium stays in vaults (no refund = penalty for underpriced policies)
+- Only the oracle (CRE DON) can verify or reject policies
+
 ### Per-Hazard Coverage Accounting
 - `activeCoverageByHazard(uint8 hazardId)` tracks active coverage per hazard type
-- Automatically updated on policy purchase, payout, and expiry
+- Automatically updated on policy purchase, payout, expiry, and rejection
 
 ### Replaceable Fee Model
 - Owner can swap `FeeRateModel` without redeploying the entire system
@@ -116,6 +124,7 @@ forge script script/Deploy.s.sol:ConfigureContracts \
 After deploying, copy the printed addresses into:
 - `script/BuyPolicy.s.sol` (constants at the top)
 - `cre_chainlink/parametrix/payout_trigger/config.staging.json` (`policyManagerAddress`)
+- `cre_chainlink/parametrix/underwriter/config.staging.json` (`policyManagerAddress`)
 
 ### 2. Buy a policy (simulate a user)
 
@@ -201,11 +210,11 @@ After running Deploy.s.sol, addresses are saved to `deployments/latest.json`:
 
 ## Tests
 
-117 tests across 4 suites:
+123 tests across 4 suites:
 
 | Suite | Tests | Coverage |
 |---|---|---|
-| `test/policyManager.t.sol` | 48 | Policy lifecycle, premium splits, payout waterfall, per-hazard coverage, vault cap sync, recomputeCaps |
+| `test/policyManager.t.sol` | 54 | Policy lifecycle, premium splits, payout waterfall, per-hazard coverage, vault cap sync, recomputeCaps, policy verification (verify/reject/enforce) |
 | `test/underwriterVault.t.sol` | 32 | ERC-4626 deposits/withdrawals, fees, share reservation, capManager, lockup periods |
 | `test/feeRateModel.t.sol` | 24 | Premium split formula, cap linking, parameter tuning, recomputeCaps |
 | `test/aaveIntegration.t.sol` | 13 | Aave supply/withdraw, rebalance, totalAssets consistency, E2E payout waterfall with Aave |
@@ -222,10 +231,11 @@ Custom hazard types can be added/removed by the contract owner via `addHazardTyp
 
 ## Policy Lifecycle
 
-1. **Purchase**: User calls `buyPolicy()` → caps auto-recomputed, premium split across 3 vaults, shares reserved in waterfall order
-2. **Active**: Policy tracked in `totalActiveCoverage` and `activeCoverageByHazard`
-3. **Payout**: Oracle calls `triggerPayout()` → waterfall pays from UW → JR → SR vaults, pro-rata scaling if underfunded
-4. **Expiry**: Anyone calls `releaseExpiredPolicy()` → reserved shares unreserved, coverage removed
+1. **Purchase**: User calls `buyPolicy()` → caps auto-recomputed, premium split across 3 vaults, shares reserved in waterfall order. Policy status = `Unverified`
+2. **Verification**: CRE underwriter workflow calls `/premium` API to validate the premium. If adequate → `verifyPolicy(id)` (status = `Verified`). If underpriced → `rejectPolicy(id)` (status = `Invalid`, shares unreserved, premium kept as penalty)
+3. **Active**: Verified policy tracked in `totalActiveCoverage` and `activeCoverageByHazard`
+4. **Payout**: Oracle calls `triggerPayout()` (requires `Verified` status) → waterfall pays from UW → JR → SR vaults, pro-rata scaling if underfunded
+5. **Expiry**: Anyone calls `releaseExpiredPolicy()` → reserved shares unreserved, coverage removed
 
 ## Governance vs Risk Curator Parameters
 
@@ -252,3 +262,4 @@ Custom hazard types can be added/removed by the contract owner via `addHazardTyp
 - Senior cap: auto-computed from `juniorCap * (10000 - uTargetBps) / uTargetBps` on every purchase
 - Fee split (junior/senior/underwriter bps): computed dynamically from live vault balances
 - Vault cap sync: pushed to vaults automatically on every `buyPolicy()`
+- Policy verification: CRE underwriter workflow automatically verifies or rejects policies based on premium adequacy

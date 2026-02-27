@@ -1260,6 +1260,16 @@ body {
   background: rgba(79, 124, 255, 0.1);
 }
 
+.status-pending {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.status-rejected {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
 .policy-card-body {
   padding: 16px;
 }

@@ -90,7 +90,9 @@ export default function ProtocolHealth() {
   const totalAssetsUsdc = rawToUsdc(data.totalAssets)
   const capUsdc = rawToUsdc(data.cap)
   const activeCoverageUsdc = rawToUsdc(data.totalActiveCoverage)
-  const coverageRatio = activeCoverageUsdc > 0 ? totalAssetsUsdc / activeCoverageUsdc : Infinity
+  const pendingCoverageUsdc = rawToUsdc(data.pendingCoverage)
+  const verifiedCoverageUsdc = activeCoverageUsdc - pendingCoverageUsdc
+  const coverageRatio = verifiedCoverageUsdc > 0 ? totalAssetsUsdc / verifiedCoverageUsdc : Infinity
 
   const uwAssets = rawToUsdc(data.underwriter.totalAssets)
   const uwCap = rawToUsdc(data.underwriter.cap)
@@ -117,9 +119,13 @@ export default function ProtocolHealth() {
         </div>
 
         <div className="health-card">
-          <span className="health-card-label">Total Active Coverage</span>
-          <span className="health-card-value">${formatUsdc(activeCoverageUsdc)}</span>
-          <span className="health-card-sub">USDC (if all policies trigger)</span>
+          <span className="health-card-label">Verified Active Coverage</span>
+          <span className="health-card-value">${formatUsdc(verifiedCoverageUsdc)}</span>
+          <span className="health-card-sub">
+            {pendingCoverageUsdc > 0
+              ? `+ $${formatUsdc(pendingCoverageUsdc)} pending verification`
+              : 'USDC (if all policies trigger)'}
+          </span>
         </div>
 
         <div className={`health-card ${getRatioClass(coverageRatio)}`}>
@@ -143,7 +149,7 @@ export default function ProtocolHealth() {
         </div>
         <div className="health-bar-labels">
           <span>Total: ${formatCompact(totalAssetsUsdc)}</span>
-          <span>Coverage needed: ${formatCompact(activeCoverageUsdc)}</span>
+          <span>Verified coverage: ${formatCompact(verifiedCoverageUsdc)}{pendingCoverageUsdc > 0 ? ` | Pending: $${formatCompact(pendingCoverageUsdc)}` : ''}</span>
           <span>Total Cap: ${formatCompact(capUsdc)}</span>
         </div>
       </div>

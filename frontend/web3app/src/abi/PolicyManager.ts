@@ -34,6 +34,13 @@ export const PolicyManagerAbi = [
   },
   {
     type: 'function',
+    name: 'policyStatus',
+    inputs: [{ name: '', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     name: 'holderOf',
     inputs: [{ name: '', type: 'uint256' }],
     outputs: [{ name: '', type: 'address' }],

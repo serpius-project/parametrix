@@ -57,8 +57,8 @@ A user buys a parametric insurance policy via the frontend or directly on-chain.
 ### 2. Continuous Monitoring (Cron)
 On a configurable cron schedule, the workflow:
 1. Reads `nextId` from `PolicyManager` to discover how many policies exist (1 EVM read)
-2. Scans a **rotating window** of policy IDs (up to 9 per cycle, respecting the 10-read quota)
-3. Filters to **active** policies (not paid out, not expired)
+2. Scans a **rotating window** of policy IDs (up to 4 per cycle, 2 reads per policy: `policyStatus` + `policies`)
+3. Filters to **verified** policies only (status = `Verified`), then checks active (not paid out, not expired)
 4. Groups active policies by **(lat, lon, hazard)** — policies at the same location and hazard type share one weather fetch
 5. Fetches weather data for up to **5 groups** per cycle (respecting the 5 HTTP call quota), rotating through remaining groups on subsequent cycles
 6. Aggregates daily data to monthly values (max, mean, or Thornthwaite PET deficit)
@@ -103,8 +103,13 @@ payout_trigger/
 ├── package.json             # Dependencies (@chainlink/cre-sdk, viem, zod)
 └── README.md                # This file
 
+../underwriter/              # CRE underwriter verification workflow (verifies/rejects policies)
+├── main.ts                  # Verification logic (premium check via Python API)
+├── config.staging.json      # Staging config
+└── ...
+
 ../contracts/abi/
-├── PolicyManager.ts         # PolicyManager ABI (events + functions)
+├── PolicyManager.ts         # PolicyManager ABI (events + functions + verification)
 └── index.ts                 # ABI exports
 
 ../project.yaml              # CRE project settings (RPC endpoints, workflow paths)
@@ -117,7 +122,7 @@ payout_trigger/
 - **`initWorkflow(config)`** — Registers two triggers:
   - `CronCapability` with configurable schedule
   - `EVMClient.logTrigger` for `PolicyPurchased` events
-- **`getActivePolicies(runtime)`** — Reads all policies from chain, filters active ones
+- **`getActivePolicies(runtime)`** — Reads all policies from chain, filters to verified and active ones (checks `policyStatus` before reading full policy data)
 - **`createWeatherFetcher(policy)`** — Creates an HTTP callback for DON consensus that calls Open-Meteo directly, aggregates daily→monthly data, and evaluates the trigger condition
 - **`aggregateMonthly(dates, values, method)`** — Groups daily values by month, applies max or mean
 - **`computeThornthwaiteDeficit(dates, temps, precips)`** — Computes monthly water deficit for drought
@@ -238,6 +243,9 @@ event PolicyExpiredReleased(
     uint256 indexed policyId,
     uint256 sharesReleased
 );
+
+event PolicyVerified(uint256 indexed policyId);
+event PolicyRejected(uint256 indexed policyId);
 ```
 
 ## CRE Service Quota Management
@@ -248,36 +256,36 @@ The biggest engineering challenge we faced building on CRE was working within th
 
 | Quota | Limit | What consumes it |
 |-------|-------|------------------|
-| **EVM reads** (`ChainRead.CallLimit`) | 10 per execution | 1 for `nextId()` + 1 per policy scanned via `policies(id)` |
+| **EVM reads** (`ChainRead.CallLimit`) | 10 per execution | 1 for `nextId()` + 2 per policy scanned (`policyStatus(id)` + `policies(id)`) |
 | **HTTP calls** (`HTTPAction.CallLimit`) | 5 per execution | 1 per unique (location, hazard) weather fetch from Open-Meteo |
 | **Execution timeout** | 5 minutes | End-to-end, including all contract reads, HTTP calls, and writes |
 
 ### The problem
 
-A naive implementation makes **1 HTTP call per active policy**. With 6 policies we hit the 5-call limit. Worse, reading policy data from the contract costs **1 EVM read per policy** — with 10+ policies we'd blow the 10-read quota before even checking the weather.
+A naive implementation makes **1 HTTP call per active policy**. With 6 policies we hit the 5-call limit. Worse, reading policy data from the contract costs **2 EVM reads per policy** (verification status + policy data) — with 5+ policies we'd blow the 10-read quota before even checking the weather.
 
 ### Our solution: grouping + rotating windows
 
 We apply three optimizations that work together:
 
-1. **Drop unnecessary contract reads** — The original workflow fetched `holderOf(id)` for each policy (2 reads per policy). Since the holder address isn't needed for trigger evaluation, we removed it, cutting EVM reads from `1 + 2N` to `1 + N`. This allows scanning up to **9 policies per cycle**.
+1. **Early status filtering** — Each policy requires 2 reads: `policyStatus(id)` (to skip unverified/rejected policies early) and `policies(id)` (for the full data). This allows scanning up to **4 policies per cycle**. Unverified policies are skipped before the more expensive policy data read, avoiding wasted quota on policies that would revert on `triggerPayout()`.
 
 2. **Group policies by (lat, lon, hazard)** — Multiple policies at the same location with the same hazard type share identical weather data. One Open-Meteo fetch serves the entire group; each policy is then evaluated against its own trigger threshold locally.
 
 3. **Time-based rotating windows** — Since CRE is stateless, we derive a rotation offset from `Date.now()` divided by the cron interval (parsed from the config schedule). This gives each execution a different "window" into both the policy ID space and the HTTP group space:
 
-4. **Minimum premium enforcement** — A 10 USDC minimum premium is enforced on the frontend, economically discouraging micro-policies and reducing the total number of active policies the workflow needs to monitor. Fewer policies means less pressure on both the EVM read and HTTP call budgets per execution.
+4. **On-chain premium verification** — The companion `underwriter` CRE workflow validates every policy's premium against the Python API. Underpriced policies are rejected on-chain (`rejectPolicy()`), and this workflow skips them via the `policyStatus` check, reducing the number of active policies to monitor and saving EVM read and HTTP call budgets.
 
 ```
 EVM read window:  cycleIndex = floor(now / cronInterval)
-                  windowIndex = cycleIndex % ceil(totalPolicies / 9)
-                  scan policies [windowIndex*9 + 1 .. windowIndex*9 + 9]
+                  windowIndex = cycleIndex % ceil(totalPolicies / 4)
+                  scan policies [windowIndex*4 + 1 .. windowIndex*4 + 4]
 
 HTTP call window: offset = (cycleIndex % ceil(totalGroups / 5)) * 5
                   fetch groups [offset .. offset+5]
 ```
 
-With a 2-minute cron, all policies are checked within `ceil(N/9) * 2` minutes, and all weather groups within `ceil(G/5) * 2` minutes. For 20 policies across 8 locations, full coverage takes ~6 minutes (3 cron cycles).
+With a 2-minute cron, all policies are checked within `ceil(N/4) * 2` minutes, and all weather groups within `ceil(G/5) * 2` minutes. For 20 policies across 8 locations, full coverage takes ~10 minutes (5 cron cycles).
 
 ### Why this was challenging
 
@@ -292,7 +300,7 @@ With a 2-minute cron, all policies are checked within `ceil(N/9) * 2` minutes, a
 |------------|-------|
 | `CronCapability` | Periodic policy monitoring on configurable schedule |
 | `EVMClient.logTrigger` | React to `PolicyPurchased` events in real-time |
-| `EVMClient.callContract` | Read policy data from chain (`policies()`, `nextId()`) — budget: 10 per execution |
+| `EVMClient.callContract` | Read policy data from chain (`nextId()`, `policyStatus()`, `policies()`) — budget: 10 per execution |
 | `HTTPClient.sendRequest` | Fetch weather data from Open-Meteo with DON consensus via median — budget: 5 per execution |
 | `EVMClient.writeReport` | Submit `triggerPayout()` transaction with DON-signed report |
 | `runtime.report()` | Generate consensus report for on-chain verification |
@@ -300,7 +308,8 @@ With a 2-minute cron, all policies are checked within `ceil(N/9) * 2` minutes, a
 ## Security
 
 - **No centralized dependency**: Weather data fetched directly from Open-Meteo (public API) — each DON node verifies independently
-- **Oracle authorization**: Only the DON address (set via `setOracle()`) can call `triggerPayout()`
+- **Policy verification**: Only `Verified` policies are processed — unverified and rejected policies are skipped, preventing wasted gas on calls that would revert. The companion `underwriter` workflow handles verification
+- **Oracle authorization**: Only the DON address (set via `setOracle()`) can call `triggerPayout()`, `verifyPolicy()`, and `rejectPolicy()`
 - **DON consensus**: Weather data aggregated via median across multiple nodes — no single point of failure
 - **Three-vault waterfall**: Payouts cascade Underwriter -> Junior -> Senior, isolating risk by tranche
 - **Share reservation**: Each policy's coverage is backed by reserved shares across all 3 vaults at purchase time

@@ -9,8 +9,10 @@ interface PolicyCardProps {
 
 function getStatus(policy: PolicyOnChain, now: number): { label: string; className: string } {
   if (policy.paid) return { label: 'Paid Out', className: 'status-paid' }
+  if (policy.status === 2) return { label: 'Rejected', className: 'status-rejected' }
+  if (policy.status === 0) return { label: 'Pending Verification', className: 'status-pending' }
   if (policy.end < now) return { label: 'Expired', className: 'status-expired' }
-  return { label: 'Active', className: 'status-active' }
+  return { label: 'Verified', className: 'status-active' }
 }
 
 export default function PolicyCard({ policy, now }: PolicyCardProps) {
@@ -57,7 +59,7 @@ export default function PolicyCard({ policy, now }: PolicyCardProps) {
           <span>{formatDate(policy.start)} — {formatDate(policy.end)}</span>
         </div>
 
-        {status.label === 'Active' && (
+        {(status.label === 'Verified' || status.label === 'Pending Verification') && (
           <div className="policy-detail highlight">
             <span>Days Remaining</span>
             <span>{daysLeft}</span>

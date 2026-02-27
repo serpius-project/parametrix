@@ -343,7 +343,8 @@ contract AaveIntegrationTest is Test {
         uint256 pid = manager.buyPolicy(0, 30, coverage, premium, 35, alice, 0, 0);
         vm.stopPrank();
 
-        // Trigger payout — should pull from Aave as needed
+        // Verify and trigger payout — should pull from Aave as needed
+        manager.verifyPolicy(pid);
         uint256 payoutAmount = 50_000 * 10**18;
         uint256 aliceBefore = asset.balanceOf(alice);
         manager.triggerPayout(pid, 40, payoutAmount);

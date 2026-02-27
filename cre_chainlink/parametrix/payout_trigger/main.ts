@@ -407,7 +407,7 @@ const getActivePolicies = (runtime: Runtime<Config>): Policy[] => {
 	runtime.log(`Next policy ID: ${nextId.toString()}`)
 
 	const totalPolicies = Number(nextId) - 1 // policy IDs are 1-based
-	const maxPolicyScan = MAX_EVM_READS - 1  // reserve 1 read for nextId
+	const maxPolicyScan = Math.floor((MAX_EVM_READS - 1) / 2) // 2 reads per policy: policyStatus + policies
 
 	// Rotating scan window: when there are more policies than we can read
 	// in one execution, scan a different window each cron cycle.
@@ -434,7 +434,36 @@ const getActivePolicies = (runtime: Runtime<Config>): Policy[] => {
 
 	for (let id = scanStart; id < scanEnd; id++) {
 		try {
-			// Fetch policy data
+			// EVM read 1: Check policy verification status first (cheaper to skip early)
+			const statusCallData = encodeFunctionData({
+				abi: PolicyManager,
+				functionName: 'policyStatus',
+				args: [BigInt(id)],
+			})
+
+			const statusResponse = evmClient
+				.callContract(runtime, {
+					call: encodeCallMsg({
+						from: zeroAddress,
+						to: evmConfig.policyManagerAddress as Address,
+						data: statusCallData,
+					}),
+					blockNumber: LAST_FINALIZED_BLOCK_NUMBER,
+				})
+				.result()
+
+			const status = decodeFunctionResult({
+				abi: PolicyManager,
+				functionName: 'policyStatus',
+				data: bytesToHex(statusResponse.data),
+			})
+
+			if (Number(status) !== 1) { // 1 = Verified
+				runtime.log(`Policy ${id}: status=${status}, skipping (not verified)`)
+				continue
+			}
+
+			// EVM read 2: Fetch policy data
 			const policyCallData = encodeFunctionData({
 				abi: PolicyManager,
 				functionName: 'policies',

@@ -49,6 +49,13 @@ export function useUserPolicies() {
 
         const [hazard, start, end, lat, lon, maxCoverage, premium, triggerThreshold, paid] = data
 
+        const status = await publicClient.readContract({
+          address: POLICY_MANAGER_ADDRESS,
+          abi: PolicyManagerAbi,
+          functionName: 'policyStatus',
+          args: [id],
+        })
+
         userPolicies.push({
           id,
           hazard: Number(hazard),
@@ -60,6 +67,7 @@ export function useUserPolicies() {
           premium,
           triggerThreshold,
           paid,
+          status: Number(status),
           holder: holder as `0x${string}`,
         })
       }

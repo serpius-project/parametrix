@@ -1,0 +1,24 @@
+# ==========================================================================
+# CRE WORKFLOW SETTINGS FILE
+# ==========================================================================
+# Underwriter verification workflow.
+# Checks newly purchased policies against the Python API premium calculation,
+# then verifies or rejects them on-chain.
+
+# ==========================================================================
+staging-settings:
+  user-workflow:
+    workflow-name: "underwriter-staging"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.staging.json"
+    secrets-path: ""
+
+# ==========================================================================
+production-settings:
+  user-workflow:
+    workflow-name: "underwriter-production"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.production.json"
+    secrets-path: ""
