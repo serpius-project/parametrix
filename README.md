@@ -1,4 +1,4 @@
-# Parametrix
+# Parametrix (Prmtrix.finance)
 
 **On-chain, fully automated parametric insurance.**
 
