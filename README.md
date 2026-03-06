@@ -2,6 +2,8 @@
 
 **On-chain, fully automated parametric insurance.**
 
+**[Launch App](https://app.prmtrix.finance)**
+
 Parametrix Finance provides parametric insurance for data centers and the lenders financing their infrastructure. Coverage targets natural hazards — heatwaves, floods, and droughts. Payout triggers are defined upfront and enforced on-chain using objective weather data, parsed via a Chainlink CRE workflow that orchestrates the full pipeline from data retrieval to payout execution.
 
 ---

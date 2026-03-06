@@ -123,9 +123,9 @@ underwriter/
   "evms": [{
     "policyManagerAddress": "0xEfC0E3ff32A6e71D7661062E9F444D919F4b17e4",
     "chainSelectorName": "ethereum-testnet-sepolia",
-    "gasLimit": "500000"
+    "gasLimit": "1000000"
   }],
-  "apiUrl": "http://localhost:8000"
+  "apiUrl": "http://localhost:2082"
 }
 ```
 

@@ -54,7 +54,7 @@ Required environment variables in `.env`:
 | `ASSET_TOKEN` | USDC address (mainnet or fork) | required |
 | `UW_VAULT_CAP` | Underwriter vault cap | `2,000,000 USDC` |
 | `JUNIOR_VAULT_CAP` | Junior vault cap | `5,000,000 USDC` |
-| `SENIOR_VAULT_CAP` | Senior vault cap | `15,000,000 USDC` |
+| `SENIOR_VAULT_CAP` | Senior vault cap (auto-computed if omitted) | `juniorCap × 3` |
 | `DEPOSIT_FEE_BPS` | Deposit fee (basis points) | `50` (0.5%) |
 | `FEE_RECIPIENT` | Fee recipient address | deployer |
 | `POLICY_URI` | ERC-1155 metadata URI | `https://api.parametrix.io/policy/{id}` |
@@ -77,13 +77,13 @@ Network-specific:
 ### Dry Run (Simulation)
 Test without broadcasting:
 ```bash
-forge script script/Deploy.s.sol:DeployScript --rpc-url $TENDERLY_RPC_URL
+forge script script/Deploy.s.sol:DeployContracts --rpc-url $TENDERLY_RPC_URL
 ```
 
 ### Resume Failed Deployment
 Continue from last successful transaction:
 ```bash
-forge script script/Deploy.s.sol:DeployScript \
+forge script script/Deploy.s.sol:DeployContracts \
   --rpc-url $TENDERLY_RPC_URL \
   --resume \
   --broadcast
@@ -180,13 +180,10 @@ Script saves to `deployments/latest.json`:
 - Transfer ownership to multisig immediately
 - Set sane Aave targets (max 90% per vault)
 
-## Full Documentation
-
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete guide.
-
 ## Resources
 
-- **CRE Setup**: `cre_chainlink/parametrix/payout_trigger/CRE_SETUP.md`
+- **CRE Payout Trigger**: `cre_chainlink/parametrix/payout_trigger/README.md`
+- **CRE Underwriter**: `cre_chainlink/parametrix/underwriter/README.md`
 - **Foundry Docs**: https://book.getfoundry.sh
 - **Aave V3 Docs**: https://docs.aave.com/developers/
 - **Tenderly**: https://dashboard.tenderly.co

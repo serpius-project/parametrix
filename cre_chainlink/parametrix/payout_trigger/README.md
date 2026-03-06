@@ -136,7 +136,7 @@ payout_trigger/
   "schedule": "*/2 * * * *",
   "lookbackMonths": 3,
   "evms": [{
-    "policyManagerAddress": "0xE3E1b5A56d11376D27c0efF3256E7299dF197d5E",
+    "policyManagerAddress": "0xEfC0E3ff32A6e71D7661062E9F444D919F4b17e4",
     "chainSelectorName": "ethereum-testnet-sepolia",
     "gasLimit": "1000000"
   }]
@@ -227,16 +227,21 @@ The `PolicyManager` contract emits these events for CRE monitoring:
 event PolicyPurchased(
     uint256 indexed policyId,
     address indexed holder,
-    Hazard hazard,
-    uint256 start, uint256 end,
-    uint256 maxCoverage, uint256 triggerThreshold
+    uint8 hazard,
+    uint256 start,
+    uint256 end,
+    uint256 maxCoverage,
+    int256 triggerThreshold,
+    int32 lat,
+    int32 lon
 );
 
 event PayoutTriggered(
     uint256 indexed policyId,
     address indexed holder,
-    uint256 observedValue,
-    uint256 requestedPayout, uint256 actualPayout
+    int256 observedValue,
+    uint256 requestedPayout,
+    uint256 actualPayout
 );
 
 event PolicyExpiredReleased(
