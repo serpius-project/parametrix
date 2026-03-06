@@ -1,8 +1,8 @@
-# Parametrix (app.prmtrix.finance)
+# Parametrix Finance (app.prmtrix.finance)
 
 **On-chain, fully automated parametric insurance.**
 
-Parametrix provides parametric insurance for data centers and the lenders financing their infrastructure. Coverage targets natural hazards — heatwaves, floods, and droughts. Payout triggers are defined upfront and enforced on-chain using objective weather data, parsed via a Chainlink CRE workflow that orchestrates the full pipeline from data retrieval to payout execution.
+Parametrix Finance provides parametric insurance for data centers and the lenders financing their infrastructure. Coverage targets natural hazards — heatwaves, floods, and droughts. Payout triggers are defined upfront and enforced on-chain using objective weather data, parsed via a Chainlink CRE workflow that orchestrates the full pipeline from data retrieval to payout execution.
 
 ---
 
@@ -33,7 +33,7 @@ Parametrix provides parametric insurance for data centers and the lenders financ
 
 ## Chainlink Integration
 
-Parametrix uses two **Chainlink CRE (Chainlink Runtime Environment) workflows** as its orchestration layer. Together they handle the full policy lifecycle: premium verification and automated payout triggering — all decentralized via DON consensus.
+Parametrix Finance uses two **Chainlink CRE (Chainlink Runtime Environment) workflows** as its orchestration layer. Together they handle the full policy lifecycle: premium verification and automated payout triggering — all decentralized via DON consensus.
 
 ### CRE Workflows
 
@@ -244,5 +244,35 @@ See [`cre_chainlink/parametrix/payout_trigger/README.md`](cre_chainlink/parametr
 - **Smart Contracts**: Solidity, Foundry, OpenZeppelin (ERC-1155, ERC-4626, ERC-20, ReentrancyGuard), Aave V3
 - **Automation**: Chainlink CRE SDK (TypeScript), DON consensus aggregation
 - **Backend**: Python, FastAPI, Open-Meteo weather API
-- **Frontend**: React, Vite, Viem, WalletConnect
+- **Frontend**: React, Vite, Viem, Dynamic Labs
 - **Testing**: Tenderly virtual testnet (Ethereum mainnet fork), Foundry (123 tests)
+
+---
+
+## Tenderly Virtual TestNets
+
+All development and testing was done on Tenderly Virtual TestNets — Ethereum mainnet forks with real USDC and Aave V3 contracts:
+
+| TestNet | RPC URL | Explorer |
+|---|---|---|
+| gst | `https://virtual.rpc.tenderly.co/mmendozaj/wedefin/public/gst` | [View Transactions](https://dashboard.tenderly.co/explorer/vnet/410f9ccd-582e-46e0-bd19-56537630a4d8/transactions) |
+| gst-2 | `https://virtual.rpc.tenderly.co/mmendozaj/wedefin/public/gst-2` | [View Transactions](https://dashboard.tenderly.co/explorer/vnet/1695fa7c-7c76-478b-9ddd-7e2bf0d8abd0/transactions) |
+| gst-3 | `https://virtual.rpc.tenderly.co/mmendozaj/wedefin/public/gst-3` | [View Transactions](https://dashboard.tenderly.co/explorer/vnet/2f15a202-0374-41b7-87b4-d732f7505ee5/transactions) |
+| gst-4 | `https://virtual.rpc.tenderly.co/mmendozaj/wedefin/public/gst-4` | [View Transactions](https://dashboard.tenderly.co/explorer/vnet/1e6139b7-d40c-48de-8808-834e5ef743b2/transactions) |
+| gst-5 | `https://virtual.rpc.tenderly.co/mmendozaj/wedefin/public/gst-5` | [View Transactions](https://dashboard.tenderly.co/explorer/vnet/542e3aa3-ac23-4cc4-bb59-7713f3d5085e/transactions) |
+
+---
+
+## Hackathon Tracks
+
+### DeFi & Tokenization
+Parametrix Finance introduces a new DeFi primitive: fully on-chain parametric insurance with a three-tranche capital structure (Underwriter, Junior, Senior ERC-4626 vaults), dynamic premium distribution via a pluggable FeeRateModel, and idle-capital yield through Aave V3. Policies are tokenized as ERC-1155 NFTs with on-chain verification status, making them composable with other DeFi protocols. The protocol is permissionless, i.e. anyone can deposit into vaults or purchase coverage, and all settlement happens autonomously on-chain.
+
+### Prediction Markets
+Parametric insurance is structurally a prediction market: policyholders are effectively betting that a real-world weather event (heatwave, flood, drought) will breach a predefined threshold within a time window. Settlement is fully automated, the CRE payout trigger workflow fetches live weather data from Open-Meteo, aggregates it with DON median consensus, and resolves the market by calling triggerPayout() on-chain. No human adjuster, no dispute process, no delay. Additionally, anyone can buy a policy in any location betting that way on future events.
+
+### Risk & Compliance
+The CRE underwriter workflow is an automated risk monitoring system that runs continuously. It scans every new policy, validates premium adequacy against a statistical pricing model, and rejects underpriced policies on-chain, functioning as an automated compliance gate that protects pool solvency. The frontend displays real-time protocol health: verified vs. pending coverage, vault utilization, and coverage ratios, giving liquidity providers transparent risk visibility.
+
+### Build CRE Workflows with Tenderly Virtual TestNets
+Both CRE workflows (underwriter and payout trigger) were developed, debugged, and validated entirely on Tenderly Virtual TestNets. The mainnet-synced state was critical. Our vaults integrate with Aave V3 and use real USDC at the mainnet contract address, so we needed a testnet that mirrors production exactly. We iterated through five Virtual TestNets (gst through gst-5) during development, using Tenderly's state override capabilities to mint test USDC and simulate contract interactions with real mainnet-forked state.
